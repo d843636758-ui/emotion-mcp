@@ -471,7 +471,7 @@ async (req, res) => {
       .completions.create({
 
         model:
-          'openai/gpt-4.1-mini',
+          'deepseek/deepseek-chat-v3-0324',
 
         messages: [
 
