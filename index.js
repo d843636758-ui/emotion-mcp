@@ -19,8 +19,6 @@ const {
   '@modelcontextprotocol/sdk/server/streamableHttp.js'
 )
 
-const { z } = require('zod')
-
 const app = express()
 
 app.use(cors())
@@ -157,13 +155,34 @@ new McpServer({
 
 
 
+/* =========================
+   TOOL 1
+========================= */
+
+
+
+
+
 mcpServer.tool(
 
   'current_mood',
 
-  '获取当前情绪状态',
+  {
 
-  {},
+    description:
+      '获取当前情绪状态',
+
+    inputSchema: {
+
+      type: 'object',
+
+      properties: {},
+
+      required: []
+
+    }
+
+  },
 
   async () => {
 
@@ -195,16 +214,40 @@ mcpServer.tool(
 
 
 
+/* =========================
+   TOOL 2
+========================= */
+
+
+
+
+
 mcpServer.tool(
 
   'search_memory',
 
-  '搜索历史记忆',
-
   {
 
-    query:
-      z.string()
+    description:
+      '搜索历史记忆',
+
+    inputSchema: {
+
+      type: 'object',
+
+      properties: {
+
+        query: {
+
+          type: 'string'
+
+        }
+
+      },
+
+      required: ['query']
+
+    }
 
   },
 
@@ -252,16 +295,40 @@ mcpServer.tool(
 
 
 
+/* =========================
+   TOOL 3
+========================= */
+
+
+
+
+
 mcpServer.tool(
 
   'write_memory',
 
-  '写入记忆',
-
   {
 
-    content:
-      z.string()
+    description:
+      '写入记忆',
+
+    inputSchema: {
+
+      type: 'object',
+
+      properties: {
+
+        content: {
+
+          type: 'string'
+
+        }
+
+      },
+
+      required: ['content']
+
+    }
 
   },
 
@@ -308,7 +375,7 @@ mcpServer.tool(
 
 
 /* =========================
-   MCP HTTP
+   MCP ENDPOINT
 ========================= */
 
 
@@ -319,19 +386,34 @@ app.post('/mcp',
 
 async (req, res) => {
 
-  const transport =
+  try {
 
-    new StreamableHTTPServerTransport()
+    const transport =
 
-  await mcpServer.connect(
-    transport
-  )
+      new StreamableHTTPServerTransport()
 
-  await transport.handleRequest(
-    req,
-    res,
-    req.body
-  )
+    await mcpServer.connect(
+      transport
+    )
+
+    await transport.handleRequest(
+      req,
+      res,
+      req.body
+    )
+
+  } catch (err) {
+
+    console.log(err)
+
+    res.status(500).json({
+
+      error:
+        'mcp error'
+
+    })
+
+  }
 
 })
 
@@ -376,6 +458,10 @@ function updateEmotion(text) {
 
 }
 
+
+
+
+
 app.post('/chat',
 
 async (req, res) => {
@@ -385,7 +471,9 @@ async (req, res) => {
     const { message } =
       req.body
 
-    updateEmotion(message)
+    updateEmotion(
+      message
+    )
 
     const completion =
 
