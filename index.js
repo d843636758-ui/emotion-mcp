@@ -19,6 +19,8 @@ const {
   '@modelcontextprotocol/sdk/server/streamableHttp.js'
 )
 
+const { z } = require('zod')
+
 const app = express()
 
 app.use(cors())
@@ -167,22 +169,7 @@ mcpServer.tool(
 
   'current_mood',
 
-  {
-
-    description:
-      '获取当前情绪状态',
-
-    inputSchema: {
-
-      type: 'object',
-
-      properties: {},
-
-      required: []
-
-    }
-
-  },
+  z.object({}),
 
   async () => {
 
@@ -226,30 +213,12 @@ mcpServer.tool(
 
   'search_memory',
 
-  {
+  z.object({
 
-    description:
-      '搜索历史记忆',
+    query:
+      z.string()
 
-    inputSchema: {
-
-      type: 'object',
-
-      properties: {
-
-        query: {
-
-          type: 'string'
-
-        }
-
-      },
-
-      required: ['query']
-
-    }
-
-  },
+  }),
 
   async ({ query }) => {
 
@@ -307,30 +276,12 @@ mcpServer.tool(
 
   'write_memory',
 
-  {
+  z.object({
 
-    description:
-      '写入记忆',
+    content:
+      z.string()
 
-    inputSchema: {
-
-      type: 'object',
-
-      properties: {
-
-        content: {
-
-          type: 'string'
-
-        }
-
-      },
-
-      required: ['content']
-
-    }
-
-  },
+  }),
 
   async ({ content }) => {
 
