@@ -169,6 +169,8 @@ mcpServer.tool(
 
   'current_mood',
 
+  '获取当前情绪状态',
+
   z.object({}),
 
   async () => {
@@ -212,6 +214,8 @@ mcpServer.tool(
 mcpServer.tool(
 
   'search_memory',
+
+  '搜索历史记忆',
 
   z.object({
 
@@ -275,6 +279,8 @@ mcpServer.tool(
 mcpServer.tool(
 
   'write_memory',
+
+  '写入记忆',
 
   z.object({
 
