@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="zh">
+
+<head>
+
+<meta charset="UTF-8" />
+
+<title>Emotion MCP</title>
+
+<style>
+
+body{
+background:#0f0f0f;
+color:white;
+font-family:sans-serif;
+max-width:700px;
+margin:auto;
+padding:40px;
+}
+
+input{
+width:100%;
+padding:16px;
+border:none;
+border-radius:12px;
+margin-top:20px;
+}
+
+button{
+margin-top:20px;
+padding:12px 20px;
+border:none;
+border-radius:12px;
+background:#6d28d9;
+color:white;
+cursor:pointer;
+}
+
+.card{
+background:#1a1a1a;
+padding:20px;
+border-radius:20px;
+margin-top:20px;
+}
+
+#chat{
+margin-top:20px;
+line-height:1.7;
+white-space:pre-wrap;
+}
+
+</style>
+
+</head>
+
+<body>
+
+<h1>Emotion MCP System</h1>
+
+<div class="card">
+
+<div id="mood">
+loading...
+</div>
+
+</div>
+
+<input
+id="message"
+placeholder="输入消息"
+/>
+
+<button onclick="sendMessage()">
+发送
+</button>
+
+<div id="chat"></div>
+
+<script>
+
+async function refreshMood(){
+
+const res =
+await fetch('/mood')
+
+const data =
+await res.json()
+
+document.getElementById('mood')
+.innerHTML =
+
+`
+<h3>当前情绪</h3>
+
+PA:
+${data.pa.toFixed(2)}
+
+<br><br>
+
+NA:
+${data.na.toFixed(2)}
+
+<br><br>
+
+心情:
+${data.mood}
+`
+
+}
+
+refreshMood()
+
+async function sendMessage(){
+
+const input =
+document.getElementById('message')
+
+const message =
+input.value
+
+const res =
+await fetch('/chat',{
+
+method:'POST',
+
+headers:{
+'Content-Type':'application/json'
+},
+
+body:JSON.stringify({
+message
+})
+
+})
+
+const data =
+await res.json()
+
+document.getElementById('chat')
+.innerHTML +=
+
+`
+<hr>
+
+你：
+${message}
+
+<br><br>
+
+AI：
+${data.reply}
+`
+
+input.value=''
+
+refreshMood()
+
+}
+
+</script>
+
+</body>
+
+</html>
