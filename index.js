@@ -2,22 +2,17 @@ const express = require('express')
 const cors = require('cors')
 const fs = require('fs')
 
-const OpenAI =
-require('openai').default
+const OpenAI = require('openai').default
 
 require('dotenv').config()
 
 const {
   McpServer
-} = require(
-  '@modelcontextprotocol/sdk/server/mcp.js'
-)
+} = require('@modelcontextprotocol/sdk/server/mcp.js')
 
 const {
   StreamableHTTPServerTransport
-} = require(
-  '@modelcontextprotocol/sdk/server/streamableHttp.js'
-)
+} = require('@modelcontextprotocol/sdk/server/streamableHttp.js')
 
 const { z } = require('zod')
 
@@ -56,7 +51,7 @@ const client = new OpenAI({
 
 
 /* =========================
-   EMOTION
+   EMOTION STATE
 ========================= */
 
 
@@ -69,7 +64,9 @@ let emotionState = {
 
   na: 0.2,
 
-  mood: '平静'
+  mood: '平静',
+
+  recent_high_arousal_words: []
 
 }
 
@@ -124,9 +121,92 @@ function saveMemory(memories) {
 
   } catch (err) {
 
-    console.log(err)
+    console.log(
+      'memory save error',
+      err
+    )
 
   }
+
+}
+
+
+
+
+
+/* =========================
+   EMOTION UPDATE
+========================= */
+
+
+
+
+
+function clamp(value) {
+
+  return Math.max(
+    0,
+    Math.min(1, value)
+  )
+
+}
+
+function updateEmotion(text) {
+
+  const lower =
+    String(text || '').toLowerCase()
+
+  if (
+    lower.includes('爱') ||
+    lower.includes('喜欢') ||
+    lower.includes('开心') ||
+    lower.includes('高兴') ||
+    lower.includes('想你')
+  ) {
+
+    emotionState.pa =
+      clamp(emotionState.pa + 0.1)
+
+    emotionState.na =
+      clamp(emotionState.na - 0.03)
+
+    emotionState.mood =
+      '开心'
+
+    emotionState
+      .recent_high_arousal_words
+      .push('开心')
+
+  }
+
+  if (
+    lower.includes('难过') ||
+    lower.includes('讨厌') ||
+    lower.includes('生气') ||
+    lower.includes('伤心') ||
+    lower.includes('害怕') ||
+    lower.includes('焦虑')
+  ) {
+
+    emotionState.na =
+      clamp(emotionState.na + 0.15)
+
+    emotionState.pa =
+      clamp(emotionState.pa - 0.04)
+
+    emotionState.mood =
+      '低落'
+
+    emotionState
+      .recent_high_arousal_words
+      .push('难过')
+
+  }
+
+  emotionState.recent_high_arousal_words =
+    emotionState
+      .recent_high_arousal_words
+      .slice(-8)
 
 }
 
@@ -157,21 +237,21 @@ new McpServer({
 
 
 
-/* =========================
-   TOOL 1
-========================= */
-
-
-
-
-
-mcpServer.tool(
+mcpServer.registerTool(
 
   'current_mood',
 
-  '获取当前情绪状态',
+  {
 
-  z.object({}),
+    title:
+      'Current Mood',
+
+    description:
+      '获取当前情绪状态，包括 PA、NA、心情和近期高唤醒关键词',
+
+    inputSchema: {}
+
+  },
 
   async () => {
 
@@ -181,13 +261,15 @@ mcpServer.tool(
 
         {
 
-          type: 'text',
+          type:
+            'text',
 
-          text: JSON.stringify(
-            emotionState,
-            null,
-            2
-          )
+          text:
+            JSON.stringify(
+              emotionState,
+              null,
+              2
+            )
 
         }
 
@@ -203,26 +285,27 @@ mcpServer.tool(
 
 
 
-/* =========================
-   TOOL 2
-========================= */
-
-
-
-
-
-mcpServer.tool(
+mcpServer.registerTool(
 
   'search_memory',
 
-  '搜索历史记忆',
+  {
 
-  z.object({
+    title:
+      'Search Memory',
 
-    query:
-      z.string()
+    description:
+      '根据关键词搜索历史记忆',
 
-  }),
+    inputSchema: {
+
+      query:
+        z.string()
+          .describe('要搜索的关键词')
+
+    }
+
+  },
 
   async ({ query }) => {
 
@@ -234,9 +317,7 @@ mcpServer.tool(
       memories.filter(m =>
 
         m.content &&
-        m.content.includes(
-          query
-        )
+        String(m.content).includes(query)
 
       )
 
@@ -246,13 +327,15 @@ mcpServer.tool(
 
         {
 
-          type: 'text',
+          type:
+            'text',
 
-          text: JSON.stringify(
-            result,
-            null,
-            2
-          )
+          text:
+            JSON.stringify(
+              result,
+              null,
+              2
+            )
 
         }
 
@@ -268,26 +351,27 @@ mcpServer.tool(
 
 
 
-/* =========================
-   TOOL 3
-========================= */
-
-
-
-
-
-mcpServer.tool(
+mcpServer.registerTool(
 
   'write_memory',
 
-  '写入记忆',
+  {
 
-  z.object({
+    title:
+      'Write Memory',
 
-    content:
-      z.string()
+    description:
+      '写入一条长期记忆',
 
-  }),
+    inputSchema: {
+
+      content:
+        z.string()
+          .describe('要写入的记忆内容')
+
+    }
+
+  },
 
   async ({ content }) => {
 
@@ -296,11 +380,13 @@ mcpServer.tool(
 
     memories.push({
 
-      role: 'system',
+      role:
+        'system',
 
       content,
 
-      ts: Date.now()
+      ts:
+        Date.now()
 
     })
 
@@ -312,7 +398,8 @@ mcpServer.tool(
 
         {
 
-          type: 'text',
+          type:
+            'text',
 
           text:
             'memory saved'
@@ -346,8 +433,12 @@ async (req, res) => {
   try {
 
     const transport =
+      new StreamableHTTPServerTransport({
 
-      new StreamableHTTPServerTransport()
+        sessionIdGenerator:
+          undefined
+
+      })
 
     await mcpServer.connect(
       transport
@@ -361,16 +452,113 @@ async (req, res) => {
 
   } catch (err) {
 
-    console.log(err)
+    console.log(
+      'mcp error',
+      err
+    )
 
-    res.status(500).json({
+    if (!res.headersSent) {
 
-      error:
-        'mcp error'
+      res.status(500).json({
 
-    })
+        error:
+          'mcp error'
+
+      })
+
+    }
 
   }
+
+})
+
+
+
+
+
+app.get('/mcp',
+
+(req, res) => {
+
+  res.status(405).json({
+
+    error:
+      'MCP endpoint requires POST. Use this URL in Kelivo: /mcp'
+
+  })
+
+})
+
+
+
+
+
+/* =========================
+   NORMAL WEB API
+========================= */
+
+
+
+
+
+app.get('/mood',
+
+(req, res) => {
+
+  res.json(
+    emotionState
+  )
+
+})
+
+
+
+
+
+app.get('/mcp/tools',
+
+(req, res) => {
+
+  res.json({
+
+    note:
+      'This is only a debug page. Kelivo should connect to /mcp',
+
+    tools: [
+
+      {
+
+        name:
+          'current_mood',
+
+        description:
+          '获取当前情绪状态'
+
+      },
+
+      {
+
+        name:
+          'search_memory',
+
+        description:
+          '搜索历史记忆'
+
+      },
+
+      {
+
+        name:
+          'write_memory',
+
+        description:
+          '写入记忆'
+
+      }
+
+    ]
+
+  })
 
 })
 
@@ -386,32 +574,17 @@ async (req, res) => {
 
 
 
-function updateEmotion(text) {
+function buildMoodPrompt() {
 
-  const lower =
-    text.toLowerCase()
+  return `你拥有连续情绪。
 
-  if (
-    lower.includes('开心')
-  ) {
+当前情绪状态：
+PA: ${emotionState.pa}
+NA: ${emotionState.na}
+当前心情: ${emotionState.mood}
+近期情绪关键词: ${emotionState.recent_high_arousal_words.join('、')}
 
-    emotionState.pa += 0.1
-
-    emotionState.mood =
-      '开心'
-
-  }
-
-  if (
-    lower.includes('难过')
-  ) {
-
-    emotionState.na += 0.15
-
-    emotionState.mood =
-      '低落'
-
-  }
+请自然地把当前情绪融入回答，不要主动解释情绪系统，也不要暴露 PA/NA 数值。`
 
 }
 
@@ -428,14 +601,39 @@ async (req, res) => {
     const { message } =
       req.body
 
-    updateEmotion(
-      message
-    )
+    if (!message) {
+
+      return res.status(400).json({
+
+        error:
+          'message is required'
+
+      })
+
+    }
+
+    updateEmotion(message)
+
+    const memories =
+      loadMemory()
+
+    memories.push({
+
+      role:
+        'user',
+
+      content:
+        message,
+
+      ts:
+        Date.now()
+
+    })
+
+    saveMemory(memories)
 
     const completion =
-
-      await client.chat
-      .completions.create({
+      await client.chat.completions.create({
 
         model:
           'deepseek/deepseek-chat-v3-0324',
@@ -444,17 +642,18 @@ async (req, res) => {
 
           {
 
-            role: 'system',
+            role:
+              'system',
 
             content:
-              `当前情绪：
-${emotionState.mood}`
+              buildMoodPrompt()
 
           },
 
           {
 
-            role: 'user',
+            role:
+              'user',
 
             content:
               message
@@ -465,18 +664,39 @@ ${emotionState.mood}`
 
       })
 
+    const reply =
+      completion.choices[0].message.content
+
+    memories.push({
+
+      role:
+        'assistant',
+
+      content:
+        reply,
+
+      ts:
+        Date.now()
+
+    })
+
+    saveMemory(memories)
+
     res.json({
 
-      reply:
+      reply,
 
-        completion.choices[0]
-        .message.content
+      emotion:
+        emotionState
 
     })
 
   } catch (err) {
 
-    console.log(err)
+    console.log(
+      'chat error',
+      err
+    )
 
     res.status(500).json({
 
@@ -502,9 +722,7 @@ ${emotionState.mood}`
 
 
 const PORT =
-
-  process.env.PORT ||
-  3000
+  process.env.PORT || 3000
 
 app.listen(PORT, () => {
 
