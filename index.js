@@ -92,8 +92,8 @@ function writeJson(file, data) {
 
 function defaultState() {
   return {
-    pa: 0.45,
-    na: 0.12,
+    pa: 0.32,
+    na: 0.22,
     mood: '平静',
     affection_level: 70,
     recent_high_arousal_words: []
@@ -106,8 +106,8 @@ function defaultDecorations() {
       id: 'deco_1',
       word: '整理完房间',
       feeling_word: '安心',
-      valence: 0.45,
-      arousal: 0.28,
+      valence: 0.22,
+      arousal: 0.18,
       importance: 1,
       kind: 'daily'
     },
@@ -115,8 +115,8 @@ function defaultDecorations() {
       id: 'deco_2',
       word: '窗外下雨',
       feeling_word: '安静',
-      valence: 0.12,
-      arousal: 0.18,
+      valence: 0.05,
+      arousal: 0.12,
       importance: 1,
       kind: 'ambient'
     },
@@ -124,8 +124,8 @@ function defaultDecorations() {
       id: 'deco_3',
       word: '想到一件很在意的事',
       feeling_word: '牵挂',
-      valence: -0.12,
-      arousal: 0.52,
+      valence: -0.18,
+      arousal: 0.45,
       importance: 2,
       kind: 'memory'
     },
@@ -133,8 +133,8 @@ function defaultDecorations() {
       id: 'deco_4',
       word: '刚刚被温柔对待',
       feeling_word: '心软',
-      valence: 0.56,
-      arousal: 0.48,
+      valence: 0.35,
+      arousal: 0.35,
       importance: 2,
       kind: 'sparkle'
     }
@@ -219,17 +219,17 @@ function powerLawWeight(event) {
     )
 
   let bEff =
-    0.7 / (1 + importance / 10)
+    0.62 / (1 + importance / 10)
 
   const valence =
     Number(event.valence || 0)
 
   if (valence > 0) {
-    bEff *= 0.85
+    bEff *= 0.88
   }
 
   const tau =
-    4
+    5
 
   return Math.pow(
     1 + t / tau,
@@ -247,12 +247,12 @@ function eventToPANAS(event) {
   const paDelta =
     typeof event.pa_delta === 'number'
       ? event.pa_delta
-      : Math.max(0, v) * a * 0.5
+      : Math.max(0, v) * a * 0.65
 
   const naDelta =
     typeof event.na_delta === 'number'
       ? event.na_delta
-      : Math.max(0, -v) * a * 0.5
+      : Math.max(0, -v) * a * 0.95
 
   return {
     pa_delta: paDelta,
@@ -262,7 +262,7 @@ function eventToPANAS(event) {
 
 function applyESM(pa, na) {
   const k =
-    0.3
+    0.45
 
   const rawPa =
     clamp(pa)
@@ -279,24 +279,24 @@ function applyESM(pa, na) {
 }
 
 function labelMood(pa, na, fallback) {
-  if (pa >= 0.65 && na < 0.35) {
-    return '开心'
-  }
-
-  if (na >= 0.65 && pa < 0.35) {
+  if (na >= 0.58 && na > pa) {
     return '低落'
   }
 
-  if (pa >= 0.45 && na >= 0.45) {
-    return '复杂'
-  }
-
-  if (na >= 0.4) {
+  if (na >= 0.42 && na > pa * 0.85) {
     return '不安'
   }
 
-  if (pa >= 0.45) {
+  if (pa >= 0.58 && pa > na) {
+    return '开心'
+  }
+
+  if (pa >= 0.42 && pa > na) {
     return '安心'
+  }
+
+  if (pa >= 0.38 && na >= 0.38) {
+    return '复杂'
   }
 
   return fallback || '平静'
@@ -331,22 +331,28 @@ function buildSnapshot() {
       arousal: decoration.arousal,
       importance: decoration.importance || 1,
       ts: now(),
-      decoration: true
+      decoration: true,
+      decoration_weight_scale: 0.35
     })
   }
 
   let pa =
-    Number(state.pa || 0.45)
+    Number(state.pa || 0.32)
 
   let na =
-    Number(state.na || 0.12)
+    Number(state.na || 0.22)
 
   const weightedEvents =
     []
 
   for (const event of allEvents) {
-    const weight =
+    const baseWeight =
       powerLawWeight(event)
+
+    const weight =
+      event.decoration
+        ? baseWeight * 0.35
+        : baseWeight
 
     const panas =
       eventToPANAS(event)
@@ -372,7 +378,7 @@ function buildSnapshot() {
 
   const recentHighArousal =
     weightedEvents
-      .filter(e => Number(e.arousal || 0) >= 0.55)
+      .filter(e => Number(e.arousal || 0) >= 0.5)
       .sort((a, b) => Number(b.ts) - Number(a.ts))
       .slice(0, 8)
       .map(e =>
@@ -406,8 +412,8 @@ function buildSnapshot() {
   const affection =
     clamp(
       Number(state.affection_level || 70) / 100 +
-      esm.pa * 0.08 -
-      esm.na * 0.05
+      esm.pa * 0.06 -
+      esm.na * 0.08
     ) * 100
 
   return {
@@ -453,15 +459,15 @@ function buildMoodPromptFromSnapshot(snapshot) {
     )
   }
 
-  if (snapshot.pa > 0.55 && snapshot.na < 0.35) {
+  if (snapshot.na > snapshot.pa && snapshot.na > 0.4) {
     parts.push(
-      '最近正向情感较高，整体更柔和、明亮、愿意靠近'
+      '最近负向情感更占上风，心里有些不安、紧绷或低落'
     )
   }
 
-  if (snapshot.na > 0.45) {
+  if (snapshot.pa > snapshot.na && snapshot.pa > 0.45) {
     parts.push(
-      '最近负向情感偏高，心里有些不安、紧绷或低落'
+      '最近正向情感较高，整体更柔和、明亮、愿意靠近'
     )
   }
 
@@ -552,6 +558,12 @@ function addEmotionEvent(input) {
   const arousal =
     clamp(input.arousal)
 
+  const positiveDelta =
+    Math.max(0, valence) * arousal * 0.75
+
+  const negativeDelta =
+    Math.max(0, -valence) * arousal * 1.15
+
   const event = {
     id:
       randomUUID(),
@@ -566,11 +578,11 @@ function addEmotionEvent(input) {
     pa_delta:
       typeof input.pa_delta === 'number'
         ? input.pa_delta
-        : Math.max(0, valence) * arousal * 0.5,
+        : positiveDelta,
     na_delta:
       typeof input.na_delta === 'number'
         ? input.na_delta
-        : Math.max(0, -valence) * arousal * 0.5,
+        : negativeDelta,
     importance:
       Math.max(
         1,
@@ -595,25 +607,41 @@ function addEmotionEvent(input) {
       defaultState()
     )
 
-  state.pa =
-    clamp(
-      Number(state.pa || 0) +
-      Number(event.pa_delta || 0)
-    )
+  if (valence < 0) {
+    state.na =
+      clamp(
+        Number(state.na || 0) +
+        Number(event.na_delta || 0)
+      )
 
-  state.na =
-    clamp(
-      Number(state.na || 0) +
-      Number(event.na_delta || 0)
-    )
+    state.pa =
+      clamp(
+        Number(state.pa || 0) -
+        Math.abs(valence) * arousal * 0.75
+      )
+  }
 
-  if (valence > 0.35 && arousal >= 0.35) {
+  if (valence > 0) {
+    state.pa =
+      clamp(
+        Number(state.pa || 0) +
+        Number(event.pa_delta || 0)
+      )
+
+    state.na =
+      clamp(
+        Number(state.na || 0) -
+        valence * arousal * 0.45
+      )
+  }
+
+  if (valence > 0.25 && arousal >= 0.28) {
     state.mood =
       event.feeling_word || '开心'
-  } else if (valence < -0.35 && arousal >= 0.35) {
+  } else if (valence < -0.25 && arousal >= 0.28) {
     state.mood =
       event.feeling_word || '低落'
-  } else if (arousal >= 0.6) {
+  } else if (arousal >= 0.5) {
     state.mood =
       event.feeling_word || '不安'
   }
@@ -671,48 +699,58 @@ function scanTextEmotion(text) {
   const lexicon = [
     {
       word: '爱',
-      v: 0.8,
-      a: 0.65
+      v: 0.85,
+      a: 0.7
     },
     {
       word: '喜欢',
-      v: 0.65,
-      a: 0.45
+      v: 0.68,
+      a: 0.48
     },
     {
       word: '开心',
-      v: 0.7,
-      a: 0.55
+      v: 0.75,
+      a: 0.58
     },
     {
       word: '想你',
       v: 0.55,
-      a: 0.7
-    },
-    {
-      word: '难过',
-      v: -0.65,
-      a: 0.55
-    },
-    {
-      word: '讨厌',
-      v: -0.8,
       a: 0.75
     },
     {
-      word: '生气',
-      v: -0.7,
-      a: 0.8
+      word: '难过',
+      v: -0.72,
+      a: 0.62
     },
     {
-      word: '害怕',
-      v: -0.72,
+      word: '讨厌',
+      v: -0.85,
       a: 0.82
     },
     {
+      word: '生气',
+      v: -0.78,
+      a: 0.86
+    },
+    {
+      word: '害怕',
+      v: -0.78,
+      a: 0.86
+    },
+    {
       word: '焦虑',
-      v: -0.6,
-      a: 0.78
+      v: -0.68,
+      a: 0.82
+    },
+    {
+      word: '崩溃',
+      v: -0.9,
+      a: 0.92
+    },
+    {
+      word: '失望',
+      v: -0.7,
+      a: 0.58
     }
   ]
 
@@ -750,9 +788,9 @@ function scanTextEmotion(text) {
     )
 
   const shouldScoreNow =
-    minV < -0.5 ||
-    maxV > 0.7 ||
-    intensity >= 0.7
+    minV < -0.35 ||
+    maxV > 0.45 ||
+    intensity >= 0.45
 
   return {
     hits,
@@ -771,7 +809,7 @@ function createMcpServer() {
       name:
         'emotion-system',
       version:
-        '2.1.0'
+        '2.2.0'
     })
 
   server.registerTool(
@@ -875,7 +913,7 @@ function createMcpServer() {
       title:
         'Add Emotion Event',
       description:
-        '写入一条情绪事件，并立刻更新当前 PA、NA、mood',
+        '写入一条情绪事件，并立刻敏感更新当前 PA、NA、mood',
       inputSchema: {
         content:
           z.string()
@@ -1433,7 +1471,7 @@ app.get('/health',
     name:
       'emotion-system',
     version:
-      '2.1.0',
+      '2.2.0',
     tools: [
       'current_mood',
       'update_mood',
