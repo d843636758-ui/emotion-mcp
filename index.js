@@ -1,6 +1,7 @@
 const express = require('express')
 const cors = require('cors')
 const fs = require('fs')
+const { randomUUID } = require('crypto')
 
 const OpenAI = require('openai').default
 
@@ -14,11 +15,24 @@ const {
   StreamableHTTPServerTransport
 } = require('@modelcontextprotocol/sdk/server/streamableHttp.js')
 
+const {
+  SSEServerTransport
+} = require('@modelcontextprotocol/sdk/server/sse.js')
+
 const { z } = require('zod')
 
 const app = express()
 
-app.use(cors())
+app.use(cors({
+  origin: '*',
+  exposedHeaders: [
+    'Mcp-Session-Id'
+  ],
+  allowedHeaders: [
+    'Content-Type',
+    'mcp-session-id'
+  ]
+}))
 
 app.use(express.json())
 
@@ -215,216 +229,229 @@ function updateEmotion(text) {
 
 
 /* =========================
-   MCP SERVER
+   MCP SERVER FACTORY
 ========================= */
 
 
 
 
 
-const mcpServer =
-new McpServer({
+function createMcpServer() {
 
-  name:
-    'emotion-system',
+  const server =
+    new McpServer({
 
-  version:
-    '1.0.0'
+      name:
+        'emotion-system',
 
-})
-
-
-
-
-
-mcpServer.registerTool(
-
-  'current_mood',
-
-  {
-
-    title:
-      'Current Mood',
-
-    description:
-      '获取当前情绪状态，包括 PA、NA、心情和近期高唤醒关键词',
-
-    inputSchema: {}
-
-  },
-
-  async () => {
-
-    return {
-
-      content: [
-
-        {
-
-          type:
-            'text',
-
-          text:
-            JSON.stringify(
-              emotionState,
-              null,
-              2
-            )
-
-        }
-
-      ]
-
-    }
-
-  }
-
-)
-
-
-
-
-
-mcpServer.registerTool(
-
-  'search_memory',
-
-  {
-
-    title:
-      'Search Memory',
-
-    description:
-      '根据关键词搜索历史记忆',
-
-    inputSchema: {
-
-      query:
-        z.string()
-          .describe('要搜索的关键词')
-
-    }
-
-  },
-
-  async ({ query }) => {
-
-    const memories =
-      loadMemory()
-
-    const result =
-
-      memories.filter(m =>
-
-        m.content &&
-        String(m.content).includes(query)
-
-      )
-
-    return {
-
-      content: [
-
-        {
-
-          type:
-            'text',
-
-          text:
-            JSON.stringify(
-              result,
-              null,
-              2
-            )
-
-        }
-
-      ]
-
-    }
-
-  }
-
-)
-
-
-
-
-
-mcpServer.registerTool(
-
-  'write_memory',
-
-  {
-
-    title:
-      'Write Memory',
-
-    description:
-      '写入一条长期记忆',
-
-    inputSchema: {
-
-      content:
-        z.string()
-          .describe('要写入的记忆内容')
-
-    }
-
-  },
-
-  async ({ content }) => {
-
-    const memories =
-      loadMemory()
-
-    memories.push({
-
-      role:
-        'system',
-
-      content,
-
-      ts:
-        Date.now()
+      version:
+        '1.0.0'
 
     })
 
-    saveMemory(memories)
 
-    return {
 
-      content: [
 
-        {
 
-          type:
-            'text',
+  server.registerTool(
 
-          text:
-            'memory saved'
+    'current_mood',
 
-        }
+    {
 
-      ]
+      title:
+        'Current Mood',
+
+      description:
+        '获取当前情绪状态，包括 PA、NA、心情和近期高唤醒关键词',
+
+      inputSchema: {}
+
+    },
+
+    async () => {
+
+      return {
+
+        content: [
+
+          {
+
+            type:
+              'text',
+
+            text:
+              JSON.stringify(
+                emotionState,
+                null,
+                2
+              )
+
+          }
+
+        ]
+
+      }
 
     }
 
-  }
+  )
 
-)
+
+
+
+
+  server.registerTool(
+
+    'search_memory',
+
+    {
+
+      title:
+        'Search Memory',
+
+      description:
+        '根据关键词搜索历史记忆',
+
+      inputSchema: {
+
+        query:
+          z.string()
+            .describe('要搜索的关键词')
+
+      }
+
+    },
+
+    async ({ query }) => {
+
+      const memories =
+        loadMemory()
+
+      const result =
+
+        memories.filter(m =>
+
+          m.content &&
+          String(m.content).includes(query)
+
+        )
+
+      return {
+
+        content: [
+
+          {
+
+            type:
+              'text',
+
+            text:
+              JSON.stringify(
+                result,
+                null,
+                2
+              )
+
+          }
+
+        ]
+
+      }
+
+    }
+
+  )
+
+
+
+
+
+  server.registerTool(
+
+    'write_memory',
+
+    {
+
+      title:
+        'Write Memory',
+
+      description:
+        '写入一条长期记忆',
+
+      inputSchema: {
+
+        content:
+          z.string()
+            .describe('要写入的记忆内容')
+
+      }
+
+    },
+
+    async ({ content }) => {
+
+      const memories =
+        loadMemory()
+
+      memories.push({
+
+        role:
+          'system',
+
+        content,
+
+        ts:
+          Date.now()
+
+      })
+
+      saveMemory(memories)
+
+      return {
+
+        content: [
+
+          {
+
+            type:
+              'text',
+
+            text:
+              'memory saved'
+
+          }
+
+        ]
+
+      }
+
+    }
+
+  )
+
+
+
+
+
+  return server
+
+}
 
 
 
 
 
 /* =========================
-   MCP ENDPOINT
+   STREAMABLE HTTP MCP
+   Kelivo 优先用这个
 ========================= */
 
 
 
 
+
+const streamableTransports = {}
 
 app.post('/mcp',
 
@@ -432,17 +459,83 @@ async (req, res) => {
 
   try {
 
-    const transport =
-      new StreamableHTTPServerTransport({
+    const sessionId =
+      req.headers['mcp-session-id']
 
-        sessionIdGenerator:
-          undefined
+    let transport =
+      sessionId
+        ? streamableTransports[sessionId]
+        : undefined
 
-      })
+    if (!transport) {
 
-    await mcpServer.connect(
-      transport
-    )
+      const isInitialize =
+        req.body &&
+        req.body.method === 'initialize'
+
+      if (!isInitialize) {
+
+        return res.status(400).json({
+
+          jsonrpc:
+            '2.0',
+
+          error: {
+
+            code:
+              -32000,
+
+            message:
+              'Bad Request: No valid MCP session id'
+
+          },
+
+          id:
+            req.body && req.body.id
+              ? req.body.id
+              : null
+
+        })
+
+      }
+
+      transport =
+        new StreamableHTTPServerTransport({
+
+          sessionIdGenerator:
+            () => randomUUID(),
+
+          onsessioninitialized:
+            newSessionId => {
+
+              streamableTransports[newSessionId] =
+                transport
+
+            }
+
+        })
+
+      transport.onclose =
+        () => {
+
+          if (transport.sessionId) {
+
+            delete streamableTransports[
+              transport.sessionId
+            ]
+
+          }
+
+        }
+
+      const server =
+        createMcpServer()
+
+      await server.connect(
+        transport
+      )
+
+    }
 
     await transport.handleRequest(
       req,
@@ -453,7 +546,7 @@ async (req, res) => {
   } catch (err) {
 
     console.log(
-      'mcp error',
+      'streamable mcp error',
       err
     )
 
@@ -478,14 +571,174 @@ async (req, res) => {
 
 app.get('/mcp',
 
-(req, res) => {
+async (req, res) => {
 
-  res.status(405).json({
+  const sessionId =
+    req.headers['mcp-session-id']
 
-    error:
-      'MCP endpoint requires POST. Use this URL in Kelivo: /mcp'
+  const transport =
+    streamableTransports[sessionId]
 
-  })
+  if (!transport) {
+
+    return res.status(400).json({
+
+      error:
+        'No valid MCP session id. Kelivo should connect using POST initialize first.'
+
+    })
+
+  }
+
+  await transport.handleRequest(
+    req,
+    res
+  )
+
+})
+
+
+
+
+
+app.delete('/mcp',
+
+async (req, res) => {
+
+  const sessionId =
+    req.headers['mcp-session-id']
+
+  const transport =
+    streamableTransports[sessionId]
+
+  if (!transport) {
+
+    return res.status(400).json({
+
+      error:
+        'No valid MCP session id'
+
+    })
+
+  }
+
+  await transport.handleRequest(
+    req,
+    res
+  )
+
+})
+
+
+
+
+
+/* =========================
+   LEGACY SSE MCP
+   如果 Kelivo 有 SSE 模式就用 /sse
+========================= */
+
+
+
+
+
+const sseTransports = {}
+
+app.get('/sse',
+
+async (req, res) => {
+
+  try {
+
+    const transport =
+      new SSEServerTransport(
+        '/messages',
+        res
+      )
+
+    sseTransports[transport.sessionId] =
+      transport
+
+    res.on('close', () => {
+
+      delete sseTransports[
+        transport.sessionId
+      ]
+
+    })
+
+    const server =
+      createMcpServer()
+
+    await server.connect(
+      transport
+    )
+
+  } catch (err) {
+
+    console.log(
+      'sse error',
+      err
+    )
+
+    if (!res.headersSent) {
+
+      res.status(500).send(
+        'sse error'
+      )
+
+    }
+
+  }
+
+})
+
+
+
+
+
+app.post('/messages',
+
+async (req, res) => {
+
+  try {
+
+    const sessionId =
+      req.query.sessionId
+
+    const transport =
+      sseTransports[sessionId]
+
+    if (!transport) {
+
+      return res.status(400).send(
+        'No transport found for sessionId'
+      )
+
+    }
+
+    await transport.handlePostMessage(
+      req,
+      res,
+      req.body
+    )
+
+  } catch (err) {
+
+    console.log(
+      'message error',
+      err
+    )
+
+    if (!res.headersSent) {
+
+      res.status(500).send(
+        'message error'
+      )
+
+    }
+
+  }
 
 })
 
@@ -496,6 +749,26 @@ app.get('/mcp',
 /* =========================
    NORMAL WEB API
 ========================= */
+
+
+
+
+
+app.get('/health',
+
+(req, res) => {
+
+  res.json({
+
+    ok:
+      true,
+
+    name:
+      'emotion-system'
+
+  })
+
+})
 
 
 
@@ -522,7 +795,7 @@ app.get('/mcp/tools',
   res.json({
 
     note:
-      'This is only a debug page. Kelivo should connect to /mcp',
+      'Debug only. Kelivo should connect to /mcp for Streamable HTTP or /sse for SSE.',
 
     tools: [
 
@@ -727,7 +1000,7 @@ const PORT =
 app.listen(PORT, () => {
 
   console.log(
-    'official mcp server running'
+    'emotion mcp server running'
   )
 
 })
