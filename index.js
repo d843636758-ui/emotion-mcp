@@ -42,6 +42,14 @@ app.use(express.static('public'))
 
 
 
+/* =========================
+   OPENAI
+========================= */
+
+
+
+
+
 const client = new OpenAI({
 
   apiKey:
@@ -56,11 +64,33 @@ const client = new OpenAI({
 
 
 
+/* =========================
+   STORAGE
+========================= */
+
+
+
+
+
+const DATA_DIR =
+  process.env.DATA_DIR || process.cwd()
+
+if (!fs.existsSync(DATA_DIR)) {
+
+  fs.mkdirSync(
+    DATA_DIR,
+    {
+      recursive: true
+    }
+  )
+
+}
+
 const MEMORY_FILE =
-  './memory.json'
+  `${DATA_DIR}/memory.json`
 
 const MOOD_FILE =
-  './mood_events.json'
+  `${DATA_DIR}/mood_events.json`
 
 
 
@@ -74,18 +104,38 @@ function readJsonFile(path, fallback) {
 
       fs.writeFileSync(
         path,
-        JSON.stringify(fallback, null, 2)
+        JSON.stringify(
+          fallback,
+          null,
+          2
+        )
       )
 
       return fallback
 
     }
 
-    return JSON.parse(
-      fs.readFileSync(path, 'utf8')
-    )
+    const raw =
+      fs.readFileSync(
+        path,
+        'utf8'
+      )
 
-  } catch {
+    if (!raw.trim()) {
+
+      return fallback
+
+    }
+
+    return JSON.parse(raw)
+
+  } catch (err) {
+
+    console.log(
+      'read json error',
+      path,
+      err
+    )
 
     return fallback
 
@@ -103,15 +153,24 @@ function writeJsonFile(path, data) {
 
     fs.writeFileSync(
       path,
-      JSON.stringify(data, null, 2)
+      JSON.stringify(
+        data,
+        null,
+        2
+      )
     )
+
+    return true
 
   } catch (err) {
 
     console.log(
-      'write file error',
+      'write json error',
+      path,
       err
     )
+
+    return false
 
   }
 
@@ -136,7 +195,7 @@ function loadMemory() {
 
 function saveMemory(memories) {
 
-  writeJsonFile(
+  return writeJsonFile(
     MEMORY_FILE,
     memories
   )
@@ -162,7 +221,7 @@ function loadMoodEvents() {
 
 function saveMoodEvents(events) {
 
-  writeJsonFile(
+  return writeJsonFile(
     MOOD_FILE,
     events
   )
@@ -173,12 +232,42 @@ function saveMoodEvents(events) {
 
 
 
+/* =========================
+   MOOD ENGINE
+========================= */
+
+
+
+
+
 function clamp(value) {
 
   return Math.max(
     0,
-    Math.min(1, value)
+    Math.min(
+      1,
+      Number(value || 0)
+    )
   )
+
+}
+
+
+
+
+
+function toNumber(value, fallback = 0) {
+
+  const n =
+    Number(value)
+
+  if (Number.isNaN(n)) {
+
+    return fallback
+
+  }
+
+  return n
 
 }
 
@@ -190,7 +279,7 @@ function hoursSince(ts) {
 
   return Math.max(
     0,
-    (Date.now() - ts) / 3600000
+    (Date.now() - Number(ts || Date.now())) / 3600000
   )
 
 }
@@ -205,10 +294,16 @@ function decayWeight(event) {
     hoursSince(event.ts)
 
   const importance =
-    Number(event.importance || 3)
+    toNumber(
+      event.importance,
+      3
+    )
 
   const valence =
-    Number(event.valence || 0)
+    toNumber(
+      event.valence,
+      0
+    )
 
   let b =
     0.7 / (1 + importance / 10)
@@ -220,13 +315,70 @@ function decayWeight(event) {
 
   }
 
-  const weight =
-    Math.pow(
-      1 + t / 4,
-      -b
-    )
+  return Math.pow(
+    1 + t / 4,
+    -b
+  )
 
-  return weight
+}
+
+
+
+
+
+function normalizeMoodEvent(event) {
+
+  return {
+
+    id:
+      event.id || randomUUID(),
+
+    type:
+      event.type || 'emotion',
+
+    source:
+      event.source || 'manual',
+
+    word:
+      String(event.word || '情绪波动'),
+
+    content:
+      String(event.content || ''),
+
+    valence:
+      toNumber(
+        event.valence,
+        0
+      ),
+
+    arousal:
+      toNumber(
+        event.arousal,
+        0.3
+      ),
+
+    importance:
+      toNumber(
+        event.importance,
+        3
+      ),
+
+    pa_delta:
+      toNumber(
+        event.pa_delta,
+        0
+      ),
+
+    na_delta:
+      toNumber(
+        event.na_delta,
+        0
+      ),
+
+    ts:
+      event.ts || Date.now()
+
+  }
 
 }
 
@@ -239,46 +391,37 @@ function addMoodEvent(event) {
   const events =
     loadMoodEvents()
 
-  events.push({
+  const newEvent =
+    normalizeMoodEvent({
 
-    id:
-      randomUUID(),
+      ...event,
 
-    type:
-      event.type || 'emotion',
+      id:
+        randomUUID(),
 
-    source:
-      event.source || 'manual',
+      ts:
+        Date.now()
 
-    word:
-      event.word || '情绪波动',
+    })
 
-    content:
-      event.content || '',
+  events.push(newEvent)
 
-    valence:
-      Number(event.valence || 0),
+  const ok =
+    saveMoodEvents(
+      events.slice(-500)
+    )
 
-    arousal:
-      Number(event.arousal || 0.3),
+  return {
 
-    importance:
-      Number(event.importance || 3),
+    ok,
 
-    pa_delta:
-      Number(event.pa_delta || 0),
+    event:
+      newEvent,
 
-    na_delta:
-      Number(event.na_delta || 0),
+    events_count:
+      loadMoodEvents().length
 
-    ts:
-      Date.now()
-
-  })
-
-  saveMoodEvents(
-    events.slice(-300)
-  )
+  }
 
 }
 
@@ -325,7 +468,8 @@ function inferMoodEventFromText(text) {
     lower.includes('开心') ||
     lower.includes('高兴') ||
     lower.includes('想你') ||
-    lower.includes('亲亲')
+    lower.includes('亲亲') ||
+    lower.includes('抱抱')
   ) {
 
     event = {
@@ -365,8 +509,8 @@ function inferMoodEventFromText(text) {
     lower.includes('伤心') ||
     lower.includes('害怕') ||
     lower.includes('焦虑') ||
-    lower.includes('崩溃') ||
-    lower.includes('委屈')
+    lower.includes('委屈') ||
+    lower.includes('不安')
   ) {
 
     event = {
@@ -427,22 +571,40 @@ function calculateCurrentMood() {
       decayWeight(event)
 
     const valence =
-      Number(event.valence || 0)
+      toNumber(
+        event.valence,
+        0
+      )
 
     const arousal =
-      Number(event.arousal || 0.3)
+      toNumber(
+        event.arousal,
+        0.3
+      )
 
     const paFromVA =
-      Math.max(0, valence) * arousal * 0.5
+      Math.max(
+        0,
+        valence
+      ) * arousal * 0.5
 
     const naFromVA =
-      Math.max(0, -valence) * arousal * 0.5
+      Math.max(
+        0,
+        -valence
+      ) * arousal * 0.5
 
     const paDelta =
-      Number(event.pa_delta || 0)
+      toNumber(
+        event.pa_delta,
+        0
+      )
 
     const naDelta =
-      Number(event.na_delta || 0)
+      toNumber(
+        event.na_delta,
+        0
+      )
 
     pa +=
       (paFromVA + paDelta) * weight
@@ -484,14 +646,14 @@ function calculateCurrentMood() {
     )
 
   const recentEvents =
-    weightedEvents
+    [...weightedEvents]
       .sort((a, b) =>
         b.ts - a.ts
       )
       .slice(0, 8)
 
   const topEvent =
-    weightedEvents
+    [...weightedEvents]
       .sort((a, b) =>
         b.impact * b.weight -
         a.impact * a.weight
@@ -547,21 +709,32 @@ function calculateCurrentMood() {
     top_event:
       topEvent
         ? {
+
             word:
               topEvent.word,
 
             content:
               topEvent.content,
 
+            valence:
+              topEvent.valence,
+
+            arousal:
+              topEvent.arousal,
+
+            importance:
+              topEvent.importance,
+
             weight:
               Number(topEvent.weight.toFixed(3))
+
           }
         : null,
 
     recent_high_arousal_words:
       recentEvents
         .filter(e =>
-          Number(e.arousal || 0) >= 0.55
+          toNumber(e.arousal, 0) >= 0.55
         )
         .map(e =>
           e.word
@@ -596,6 +769,24 @@ NA: ${mood.na}
 请自然地把当前情绪融入回答，不要主动解释情绪系统，也不要暴露 PA/NA 数值。`
 
 }
+
+
+
+
+
+/* =========================
+   MCP SERVER FACTORY
+========================= */
+
+
+
+
+
+const flexibleNumber =
+  z.union([
+    z.number(),
+    z.string()
+  ])
 
 
 
@@ -689,25 +880,25 @@ function createMcpServer() {
             .describe('情绪事件内容'),
 
         valence:
-          z.number()
+          flexibleNumber
             .describe('效价，范围 -1 到 1'),
 
         arousal:
-          z.number()
+          flexibleNumber
             .describe('唤醒度，范围 0 到 1'),
 
         importance:
-          z.number()
+          flexibleNumber
             .optional()
             .describe('重要度，范围 1 到 10'),
 
         pa_delta:
-          z.number()
+          flexibleNumber
             .optional()
             .describe('正向情绪变化'),
 
         na_delta:
-          z.number()
+          flexibleNumber
             .optional()
             .describe('负向情绪变化')
 
@@ -717,36 +908,52 @@ function createMcpServer() {
 
     async input => {
 
-      addMoodEvent({
+      console.log(
+        'write_emotion_event raw input:',
+        JSON.stringify(
+          input,
+          null,
+          2
+        )
+      )
 
-        type:
-          'emotion',
+      const saved =
+        addMoodEvent({
 
-        source:
-          'mcp',
+          type:
+            'emotion',
 
-        word:
-          input.word,
+          source:
+            'mcp',
 
-        content:
-          input.content,
+          word:
+            input.word,
 
-        valence:
-          input.valence,
+          content:
+            input.content,
 
-        arousal:
-          input.arousal,
+          valence:
+            input.valence,
 
-        importance:
-          input.importance || 4,
+          arousal:
+            input.arousal,
 
-        pa_delta:
-          input.pa_delta || 0,
+          importance:
+            input.importance || 4,
 
-        na_delta:
-          input.na_delta || 0
+          pa_delta:
+            input.pa_delta || 0,
 
-      })
+          na_delta:
+            input.na_delta || 0
+
+        })
+
+      const events =
+        loadMoodEvents()
+
+      const mood =
+        calculateCurrentMood()
 
       return {
 
@@ -759,7 +966,30 @@ function createMcpServer() {
 
             text:
               JSON.stringify(
-                calculateCurrentMood(),
+                {
+
+                  ok:
+                    true,
+
+                  received_input:
+                    input,
+
+                  saved_event:
+                    saved.event,
+
+                  saved_ok:
+                    saved.ok,
+
+                  events_count:
+                    events.length,
+
+                  current_mood:
+                    mood,
+
+                  mood_file:
+                    MOOD_FILE
+
+                },
                 null,
                 2
               )
@@ -806,12 +1036,9 @@ function createMcpServer() {
         loadMemory()
 
       const result =
-
         memories.filter(m =>
-
           m.content &&
           String(m.content).includes(query)
-
         )
 
       return {
@@ -895,7 +1122,20 @@ function createMcpServer() {
               'text',
 
             text:
-              'memory saved'
+              JSON.stringify(
+                {
+                  ok:
+                    true,
+
+                  result:
+                    'memory saved',
+
+                  memory_file:
+                    MEMORY_FILE
+                },
+                null,
+                2
+              )
 
           }
 
@@ -914,6 +1154,14 @@ function createMcpServer() {
   return server
 
 }
+
+
+
+
+
+/* =========================
+   MCP STREAMABLE HTTP
+========================= */
 
 
 
@@ -1101,6 +1349,14 @@ async (req, res) => {
 
 
 
+/* =========================
+   LEGACY SSE MCP
+========================= */
+
+
+
+
+
 const sseTransports = {}
 
 app.get('/sse',
@@ -1205,6 +1461,14 @@ async (req, res) => {
 
 
 
+/* =========================
+   DEBUG API
+========================= */
+
+
+
+
+
 app.get('/health',
 
 (req, res) => {
@@ -1215,7 +1479,54 @@ app.get('/health',
       true,
 
     name:
-      'emotion-system'
+      'emotion-system',
+
+    time:
+      new Date().toISOString()
+
+  })
+
+})
+
+
+
+
+
+app.get('/debug/storage',
+
+(req, res) => {
+
+  const events =
+    loadMoodEvents()
+
+  res.json({
+
+    cwd:
+      process.cwd(),
+
+    data_dir:
+      DATA_DIR,
+
+    memory_file:
+      MEMORY_FILE,
+
+    mood_file:
+      MOOD_FILE,
+
+    memory_exists:
+      fs.existsSync(MEMORY_FILE),
+
+    mood_exists:
+      fs.existsSync(MOOD_FILE),
+
+    mood_events_count:
+      events.length,
+
+    last_event:
+      events[events.length - 1] || null,
+
+    current_mood:
+      calculateCurrentMood()
 
   })
 
@@ -1260,40 +1571,49 @@ app.post('/mood/event',
   const event =
     req.body || {}
 
-  addMoodEvent({
+  const saved =
+    addMoodEvent({
 
-    type:
-      'emotion',
+      type:
+        'emotion',
 
-    source:
-      'api',
+      source:
+        'api',
 
-    word:
-      event.word || '情绪波动',
+      word:
+        event.word || '情绪波动',
 
-    content:
-      event.content || '',
+      content:
+        event.content || '',
 
-    valence:
-      Number(event.valence || 0),
+      valence:
+        event.valence || 0,
 
-    arousal:
-      Number(event.arousal || 0.3),
+      arousal:
+        event.arousal || 0.3,
 
-    importance:
-      Number(event.importance || 3),
+      importance:
+        event.importance || 3,
 
-    pa_delta:
-      Number(event.pa_delta || 0),
+      pa_delta:
+        event.pa_delta || 0,
 
-    na_delta:
-      Number(event.na_delta || 0)
+      na_delta:
+        event.na_delta || 0
+
+    })
+
+  res.json({
+
+    ok:
+      true,
+
+    saved,
+
+    current_mood:
+      calculateCurrentMood()
 
   })
-
-  res.json(
-    calculateCurrentMood()
-  )
 
 })
 
@@ -1357,6 +1677,14 @@ app.get('/mcp/tools',
   })
 
 })
+
+
+
+
+
+/* =========================
+   CHAT API
+========================= */
 
 
 
@@ -1485,6 +1813,14 @@ async (req, res) => {
   }
 
 })
+
+
+
+
+
+/* =========================
+   START
+========================= */
 
 
 
