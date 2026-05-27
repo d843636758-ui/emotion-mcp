@@ -793,6 +793,116 @@ const flexibleNumber =
 
 
 
+function saveEmotionFromInput(input, sourceName, toolName) {
+
+  const emotionWord =
+    input.feeling_word ||
+    input.word ||
+    input.mood ||
+    '情绪波动'
+
+  const valence =
+    toNumber(
+      input.valence,
+      0
+    )
+
+  const arousal =
+    toNumber(
+      input.arousal,
+      0.3
+    )
+
+  let paDelta =
+    input.pa_delta !== undefined
+      ? toNumber(input.pa_delta, 0)
+      : 0
+
+  let naDelta =
+    input.na_delta !== undefined
+      ? toNumber(input.na_delta, 0)
+      : 0
+
+  if (
+    input.pa_delta === undefined &&
+    input.na_delta === undefined
+  ) {
+
+    paDelta =
+      Math.max(0, valence) * arousal * 0.5
+
+    naDelta =
+      Math.max(0, -valence) * arousal * 0.5
+
+  }
+
+  const saved =
+    addMoodEvent({
+
+      type:
+        'emotion',
+
+      source:
+        sourceName,
+
+      word:
+        emotionWord,
+
+      content:
+        input.content || '',
+
+      valence,
+
+      arousal,
+
+      importance:
+        input.importance || 4,
+
+      pa_delta:
+        paDelta,
+
+      na_delta:
+        naDelta
+
+    })
+
+  const mood =
+    calculateCurrentMood()
+
+  return {
+
+    ok:
+      true,
+
+    tool:
+      toolName,
+
+    received_input:
+      input,
+
+    saved_event:
+      saved.event,
+
+    saved_ok:
+      saved.ok,
+
+    events_count:
+      saved.events_count,
+
+    current_mood:
+      mood,
+
+    mood_file:
+      MOOD_FILE
+
+  }
+
+}
+
+
+
+
+
 function createMcpServer() {
 
   const server =
@@ -911,49 +1021,12 @@ function createMcpServer() {
 
     async input => {
 
-      console.log(
-        'write_emotion_event raw input:',
-        JSON.stringify(
+      const result =
+        saveEmotionFromInput(
           input,
-          null,
-          2
+          'mcp_write_emotion_event',
+          'write_emotion_event'
         )
-      )
-
-      const saved =
-        addMoodEvent({
-
-          type:
-            'emotion',
-
-          source:
-            'mcp',
-
-          word:
-            input.word,
-
-          content:
-            input.content,
-
-          valence:
-            input.valence,
-
-          arousal:
-            input.arousal,
-
-          importance:
-            input.importance || 4,
-
-          pa_delta:
-            input.pa_delta || 0,
-
-          na_delta:
-            input.na_delta || 0
-
-        })
-
-      const mood =
-        calculateCurrentMood()
 
       return {
 
@@ -966,30 +1039,107 @@ function createMcpServer() {
 
             text:
               JSON.stringify(
-                {
+                result,
+                null,
+                2
+              )
 
-                  ok:
-                    true,
+          }
 
-                  received_input:
-                    input,
+        ]
 
-                  saved_event:
-                    saved.event,
+      }
 
-                  saved_ok:
-                    saved.ok,
+    }
 
-                  events_count:
-                    saved.events_count,
+  )
 
-                  current_mood:
-                    mood,
 
-                  mood_file:
-                    MOOD_FILE
 
-                },
+
+
+  server.registerTool(
+
+    'add_emotion_event',
+
+    {
+
+      title:
+        'Add Emotion Event',
+
+      description:
+        '写入一条情绪事件，会立刻影响 current_mood。兼容 Kelivo 使用的 add_emotion_event 工具名',
+
+      inputSchema:
+        z.object({
+
+          content:
+            z.string()
+              .describe('事件内容'),
+
+          feeling_word:
+            z.string()
+              .optional()
+              .describe('情绪词，例如 焦虑、开心、低落、安心'),
+
+          word:
+            z.string()
+              .optional()
+              .describe('情绪词，例如 焦虑、开心、低落、安心'),
+
+          mood:
+            z.string()
+              .optional()
+              .describe('情绪词，例如 焦虑、开心、低落、安心'),
+
+          valence:
+            flexibleNumber
+              .describe('效价，范围 -1 到 1'),
+
+          arousal:
+            flexibleNumber
+              .describe('唤醒度，范围 0 到 1'),
+
+          importance:
+            flexibleNumber
+              .optional()
+              .describe('重要度，范围 1 到 10'),
+
+          pa_delta:
+            flexibleNumber
+              .optional()
+              .describe('正向情绪变化'),
+
+          na_delta:
+            flexibleNumber
+              .optional()
+              .describe('负向情绪变化')
+
+        })
+
+    },
+
+    async input => {
+
+      const result =
+        saveEmotionFromInput(
+          input,
+          'mcp_add_emotion_event',
+          'add_emotion_event'
+        )
+
+      return {
+
+        content: [
+
+          {
+
+            type:
+              'text',
+
+            text:
+              JSON.stringify(
+                result,
                 null,
                 2
               )
@@ -1082,7 +1232,7 @@ function createMcpServer() {
         'Write Memory',
 
       description:
-        '写入一条长期记忆，不会自动改变情绪。要改变情绪请调用 write_emotion_event',
+        '写入一条长期记忆，不会自动改变情绪。要改变情绪请调用 add_emotion_event 或 write_emotion_event',
 
       inputSchema:
         z.object({
@@ -1484,7 +1634,7 @@ app.get('/health',
       'emotion-system',
 
     sdk:
-      '2.2.0',
+      '1.17.5',
 
     time:
       new Date().toISOString()
@@ -1576,49 +1726,56 @@ app.post('/mood/event',
   const event =
     req.body || {}
 
-  const saved =
-    addMoodEvent({
+  const result =
+    saveEmotionFromInput(
+      event,
+      'api_mood_event',
+      'api_mood_event'
+    )
 
-      type:
-        'emotion',
+  res.json(result)
 
-      source:
-        'api',
+})
 
-      word:
-        event.word || '情绪波动',
 
-      content:
-        event.content || '',
 
-      valence:
-        event.valence || 0,
 
-      arousal:
-        event.arousal || 0.3,
 
-      importance:
-        event.importance || 3,
+app.get('/debug/add-anxiety',
 
-      pa_delta:
-        event.pa_delta || 0,
+(req, res) => {
 
-      na_delta:
-        event.na_delta || 0
+  const result =
+    saveEmotionFromInput(
+      {
 
-    })
+        content:
+          'debug 手动写入一条强负面高唤醒情绪事件',
 
-  res.json({
+        feeling_word:
+          '焦虑',
 
-    ok:
-      true,
+        valence:
+          -0.9,
 
-    saved,
+        arousal:
+          0.95,
 
-    current_mood:
-      calculateCurrentMood()
+        importance:
+          9,
 
-  })
+        pa_delta:
+          -0.1,
+
+        na_delta:
+          0.45
+
+      },
+      'debug',
+      'debug_add_anxiety'
+    )
+
+  res.json(result)
 
 })
 
@@ -1654,6 +1811,16 @@ app.get('/mcp/tools',
 
         description:
           '写入情绪事件并实时影响当前情绪'
+
+      },
+
+      {
+
+        name:
+          'add_emotion_event',
+
+        description:
+          '写入情绪事件并实时影响当前情绪，兼容 Kelivo'
 
       },
 
@@ -1837,7 +2004,7 @@ const PORT =
 app.listen(PORT, () => {
 
   console.log(
-    'emotion mcp server running sdk 2.2.0'
+    'emotion mcp server running sdk 1.17.5'
   )
 
 })
