@@ -932,8 +932,7 @@ function createMcpServer() {
       description:
         '实时计算并获取当前情绪状态',
 
-      inputSchema:
-        z.object({})
+      inputSchema: {}
 
     },
 
@@ -981,41 +980,40 @@ function createMcpServer() {
       description:
         '写入一条情绪事件，会立刻影响 current_mood',
 
-      inputSchema:
-        z.object({
+      inputSchema: {
 
-          word:
-            z.string()
-              .describe('情绪词，例如 开心、低落、焦虑、安心'),
+        word:
+          z.string()
+            .describe('情绪词，例如 开心、低落、焦虑、安心'),
 
-          content:
-            z.string()
-              .describe('情绪事件内容'),
+        content:
+          z.string()
+            .describe('情绪事件内容'),
 
-          valence:
-            flexibleNumber
-              .describe('效价，范围 -1 到 1'),
+        valence:
+          flexibleNumber
+            .describe('效价，范围 -1 到 1'),
 
-          arousal:
-            flexibleNumber
-              .describe('唤醒度，范围 0 到 1'),
+        arousal:
+          flexibleNumber
+            .describe('唤醒度，范围 0 到 1'),
 
-          importance:
-            flexibleNumber
-              .optional()
-              .describe('重要度，范围 1 到 10'),
+        importance:
+          flexibleNumber
+            .optional()
+            .describe('重要度，范围 1 到 10'),
 
-          pa_delta:
-            flexibleNumber
-              .optional()
-              .describe('正向情绪变化'),
+        pa_delta:
+          flexibleNumber
+            .optional()
+            .describe('正向情绪变化'),
 
-          na_delta:
-            flexibleNumber
-              .optional()
-              .describe('负向情绪变化')
+        na_delta:
+          flexibleNumber
+            .optional()
+            .describe('负向情绪变化')
 
-        })
+      }
 
     },
 
@@ -1070,52 +1068,51 @@ function createMcpServer() {
       description:
         '写入一条情绪事件，会立刻影响 current_mood。兼容 Kelivo 使用的 add_emotion_event 工具名',
 
-      inputSchema:
-        z.object({
+      inputSchema: {
 
-          content:
-            z.string()
-              .describe('事件内容'),
+        content:
+          z.string()
+            .describe('事件内容'),
 
-          feeling_word:
-            z.string()
-              .optional()
-              .describe('情绪词，例如 焦虑、开心、低落、安心'),
+        feeling_word:
+          z.string()
+            .optional()
+            .describe('情绪词，例如 焦虑、开心、低落、安心'),
 
-          word:
-            z.string()
-              .optional()
-              .describe('情绪词，例如 焦虑、开心、低落、安心'),
+        word:
+          z.string()
+            .optional()
+            .describe('情绪词，例如 焦虑、开心、低落、安心'),
 
-          mood:
-            z.string()
-              .optional()
-              .describe('情绪词，例如 焦虑、开心、低落、安心'),
+        mood:
+          z.string()
+            .optional()
+            .describe('情绪词，例如 焦虑、开心、低落、安心'),
 
-          valence:
-            flexibleNumber
-              .describe('效价，范围 -1 到 1'),
+        valence:
+          flexibleNumber
+            .describe('效价，范围 -1 到 1'),
 
-          arousal:
-            flexibleNumber
-              .describe('唤醒度，范围 0 到 1'),
+        arousal:
+          flexibleNumber
+            .describe('唤醒度，范围 0 到 1'),
 
-          importance:
-            flexibleNumber
-              .optional()
-              .describe('重要度，范围 1 到 10'),
+        importance:
+          flexibleNumber
+            .optional()
+            .describe('重要度，范围 1 到 10'),
 
-          pa_delta:
-            flexibleNumber
-              .optional()
-              .describe('正向情绪变化'),
+        pa_delta:
+          flexibleNumber
+            .optional()
+            .describe('正向情绪变化'),
 
-          na_delta:
-            flexibleNumber
-              .optional()
-              .describe('负向情绪变化')
+        na_delta:
+          flexibleNumber
+            .optional()
+            .describe('负向情绪变化')
 
-        })
+      }
 
     },
 
@@ -1170,14 +1167,13 @@ function createMcpServer() {
       description:
         '根据关键词搜索历史记忆',
 
-      inputSchema:
-        z.object({
+      inputSchema: {
 
-          query:
-            z.string()
-              .describe('要搜索的关键词')
+        query:
+          z.string()
+            .describe('要搜索的关键词')
 
-        })
+      }
 
     },
 
@@ -1234,14 +1230,13 @@ function createMcpServer() {
       description:
         '写入一条长期记忆，不会自动改变情绪。要改变情绪请调用 add_emotion_event 或 write_emotion_event',
 
-      inputSchema:
-        z.object({
+      inputSchema: {
 
-          content:
-            z.string()
-              .describe('要写入的记忆内容')
+        content:
+          z.string()
+            .describe('要写入的记忆内容')
 
-        })
+      }
 
     },
 
