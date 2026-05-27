@@ -970,6 +970,105 @@ function createMcpServer() {
 
   server.registerTool(
 
+    'add_emotion_event',
+
+    {
+
+      title:
+        'Add Emotion Event',
+
+      description:
+        '写入一条情绪事件，会立刻影响 current_mood。兼容 Kelivo 使用的 add_emotion_event 工具名',
+
+      inputSchema: {
+
+        content:
+          z.string()
+            .describe('事件内容'),
+
+        feeling_word:
+          z.string()
+            .optional()
+            .describe('情绪词，例如 焦虑、开心、低落、安心'),
+
+        word:
+          z.string()
+            .optional()
+            .describe('情绪词，例如 焦虑、开心、低落、安心'),
+
+        mood:
+          z.string()
+            .optional()
+            .describe('情绪词，例如 焦虑、开心、低落、安心'),
+
+        valence:
+          flexibleNumber
+            .describe('效价，范围 -1 到 1'),
+
+        arousal:
+          flexibleNumber
+            .describe('唤醒度，范围 0 到 1'),
+
+        importance:
+          flexibleNumber
+            .optional()
+            .describe('重要度，范围 1 到 10'),
+
+        pa_delta:
+          flexibleNumber
+            .optional()
+            .describe('正向情绪变化'),
+
+        na_delta:
+          flexibleNumber
+            .optional()
+            .describe('负向情绪变化')
+
+      }
+
+    },
+
+    async input => {
+
+      const result =
+        saveEmotionFromInput(
+          input,
+          'mcp_add_emotion_event',
+          'add_emotion_event'
+        )
+
+      return {
+
+        content: [
+
+          {
+
+            type:
+              'text',
+
+            text:
+              JSON.stringify(
+                result,
+                null,
+                2
+              )
+
+          }
+
+        ]
+
+      }
+
+    }
+
+  )
+
+
+
+
+
+  server.registerTool(
+
     'write_emotion_event',
 
     {
@@ -1058,59 +1157,22 @@ function createMcpServer() {
 
   server.registerTool(
 
-    'add_emotion_event',
+    'list_emotion_events',
 
     {
 
       title:
-        'Add Emotion Event',
+        'List Emotion Events',
 
       description:
-        '写入一条情绪事件，会立刻影响 current_mood。兼容 Kelivo 使用的 add_emotion_event 工具名',
+        '列出最近的情绪事件，方便查看并删除指定事件',
 
       inputSchema: {
 
-        content:
-          z.string()
-            .describe('事件内容'),
-
-        feeling_word:
-          z.string()
-            .optional()
-            .describe('情绪词，例如 焦虑、开心、低落、安心'),
-
-        word:
-          z.string()
-            .optional()
-            .describe('情绪词，例如 焦虑、开心、低落、安心'),
-
-        mood:
-          z.string()
-            .optional()
-            .describe('情绪词，例如 焦虑、开心、低落、安心'),
-
-        valence:
-          flexibleNumber
-            .describe('效价，范围 -1 到 1'),
-
-        arousal:
-          flexibleNumber
-            .describe('唤醒度，范围 0 到 1'),
-
-        importance:
+        limit:
           flexibleNumber
             .optional()
-            .describe('重要度，范围 1 到 10'),
-
-        pa_delta:
-          flexibleNumber
-            .optional()
-            .describe('正向情绪变化'),
-
-        na_delta:
-          flexibleNumber
-            .optional()
-            .describe('负向情绪变化')
+            .describe('返回最近多少条事件，默认 20 条')
 
       }
 
@@ -1118,12 +1180,19 @@ function createMcpServer() {
 
     async input => {
 
-      const result =
-        saveEmotionFromInput(
-          input,
-          'mcp_add_emotion_event',
-          'add_emotion_event'
+      const limit =
+        toNumber(
+          input.limit,
+          20
         )
+
+      const events =
+        loadMoodEvents()
+
+      const result =
+        events
+          .slice(-limit)
+          .reverse()
 
       return {
 
@@ -1136,7 +1205,213 @@ function createMcpServer() {
 
             text:
               JSON.stringify(
-                result,
+                {
+
+                  ok:
+                    true,
+
+                  count:
+                    result.length,
+
+                  events:
+                    result,
+
+                  current_mood:
+                    calculateCurrentMood()
+
+                },
+                null,
+                2
+              )
+
+          }
+
+        ]
+
+      }
+
+    }
+
+  )
+
+
+
+
+
+  server.registerTool(
+
+    'delete_emotion_event',
+
+    {
+
+      title:
+        'Delete Emotion Event',
+
+      description:
+        '删除指定情绪事件。可以按 id 删除，也可以按关键词删除测试事件',
+
+      inputSchema: {
+
+        id:
+          z.string()
+            .optional()
+            .describe('要删除的情绪事件 id'),
+
+        keyword:
+          z.string()
+            .optional()
+            .describe('按关键词删除，例如 强焦虑、测试、debug'),
+
+        delete_all_matched:
+          z.boolean()
+            .optional()
+            .describe('是否删除所有匹配关键词的事件，默认 true')
+
+      }
+
+    },
+
+    async input => {
+
+      const events =
+        loadMoodEvents()
+
+      const before =
+        events.length
+
+      const deleteAllMatched =
+        input.delete_all_matched !== false
+
+      let removedEvents =
+        []
+
+      let filtered =
+        []
+
+      if (input.id) {
+
+        filtered =
+          events.filter(event => {
+
+            const matched =
+              event.id === input.id
+
+            if (matched) {
+
+              removedEvents.push(event)
+
+            }
+
+            return !matched
+
+          })
+
+      } else if (input.keyword) {
+
+        let alreadyDeletedOne =
+          false
+
+        for (const event of events) {
+
+          const text =
+            `${event.word || ''} ${event.content || ''} ${event.source || ''}`
+
+          const matched =
+            text.includes(
+              String(input.keyword)
+            )
+
+          if (
+            matched &&
+            (
+              deleteAllMatched ||
+              !alreadyDeletedOne
+            )
+          ) {
+
+            removedEvents.push(event)
+
+            alreadyDeletedOne =
+              true
+
+          } else {
+
+            filtered.push(event)
+
+          }
+
+        }
+
+      } else {
+
+        return {
+
+          content: [
+
+            {
+
+              type:
+                'text',
+
+              text:
+                JSON.stringify(
+                  {
+
+                    ok:
+                      false,
+
+                    error:
+                      '必须提供 id 或 keyword',
+
+                    current_mood:
+                      calculateCurrentMood()
+
+                  },
+                  null,
+                  2
+                )
+
+            }
+
+          ]
+
+        }
+
+      }
+
+      const ok =
+        saveMoodEvents(filtered)
+
+      return {
+
+        content: [
+
+          {
+
+            type:
+              'text',
+
+            text:
+              JSON.stringify(
+                {
+
+                  ok,
+
+                  removed:
+                    before - filtered.length,
+
+                  removed_events:
+                    removedEvents,
+
+                  before,
+
+                  after:
+                    filtered.length,
+
+                  current_mood:
+                    calculateCurrentMood()
+
+                },
                 null,
                 2
               )
@@ -1269,7 +1544,7 @@ function createMcpServer() {
             type:
               'text',
 
-            text:
+              text:
               JSON.stringify(
                 {
                   ok,
@@ -1802,6 +2077,16 @@ app.get('/mcp/tools',
       {
 
         name:
+          'add_emotion_event',
+
+        description:
+          '写入情绪事件并实时影响当前情绪，兼容 Kelivo'
+
+      },
+
+      {
+
+        name:
           'write_emotion_event',
 
         description:
@@ -1812,10 +2097,20 @@ app.get('/mcp/tools',
       {
 
         name:
-          'add_emotion_event',
+          'list_emotion_events',
 
         description:
-          '写入情绪事件并实时影响当前情绪，兼容 Kelivo'
+          '列出最近的情绪事件'
+
+      },
+
+      {
+
+        name:
+          'delete_emotion_event',
+
+        description:
+          '删除指定情绪事件'
 
       },
 
