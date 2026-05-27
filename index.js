@@ -35,7 +35,9 @@ app.use(cors({
   ]
 }))
 
-app.use(express.json())
+app.use(express.json({
+  limit: '20mb'
+}))
 
 app.use(express.static('public'))
 
@@ -341,7 +343,12 @@ function normalizeMoodEvent(event) {
       event.source || 'manual',
 
     word:
-      String(event.word || '情绪波动'),
+      String(
+        event.word ||
+        event.feeling_word ||
+        event.mood ||
+        '情绪波动'
+      ),
 
     content:
       String(event.content || ''),
@@ -1954,6 +1961,12 @@ app.get('/health',
     formula:
       'weighted-average-v2',
 
+    data_dir:
+      DATA_DIR,
+
+    mood_file:
+      MOOD_FILE,
+
     time:
       new Date().toISOString()
 
@@ -2094,6 +2107,280 @@ app.get('/debug/add-anxiety',
     )
 
   res.json(result)
+
+})
+
+
+
+
+
+app.get('/debug/import-events-page',
+
+(req, res) => {
+
+  res.send(`
+
+<!DOCTYPE html>
+<html lang="zh">
+
+<head>
+<meta charset="UTF-8">
+<title>Import Emotion Events</title>
+<style>
+body{
+  background:#111;
+  color:#fff;
+  font-family:sans-serif;
+  padding:24px;
+}
+textarea{
+  width:100%;
+  height:420px;
+  background:#1f1f1f;
+  color:#fff;
+  border:1px solid #555;
+  border-radius:12px;
+  padding:12px;
+  box-sizing:border-box;
+}
+button{
+  margin-top:16px;
+  padding:12px 18px;
+  border:0;
+  border-radius:10px;
+  background:#6d28d9;
+  color:white;
+  font-size:16px;
+}
+pre{
+  white-space:pre-wrap;
+  background:#222;
+  padding:12px;
+  border-radius:12px;
+}
+</style>
+</head>
+
+<body>
+
+<h2>恢复情绪事件库</h2>
+
+<p>把你复制的 mood_events JSON 粘贴到下面。</p>
+
+<textarea id="events" placeholder="粘贴你的事件数组 JSON"></textarea>
+
+<br>
+
+<button onclick="importEvents()">恢复事件</button>
+
+<pre id="result"></pre>
+
+<script>
+
+async function importEvents(){
+
+  const raw =
+    document.getElementById('events').value
+
+  let parsed
+
+  try {
+
+    parsed =
+      JSON.parse(raw)
+
+  } catch (err) {
+
+    document.getElementById('result').textContent =
+      'JSON 格式错误：' + err.message
+
+    return
+
+  }
+
+  const res =
+    await fetch('/debug/import-events', {
+
+      method:'POST',
+
+      headers:{
+        'Content-Type':'application/json'
+      },
+
+      body:
+        JSON.stringify({
+          events: parsed,
+          mode: 'replace'
+        })
+
+    })
+
+  const data =
+    await res.json()
+
+  document.getElementById('result').textContent =
+    JSON.stringify(data, null, 2)
+
+}
+
+</script>
+
+</body>
+
+</html>
+
+  `)
+
+})
+
+
+
+
+
+app.post('/debug/import-events',
+
+(req, res) => {
+
+  try {
+
+    const body =
+      req.body || {}
+
+    let incoming =
+      body.events
+
+    if (
+      incoming &&
+      incoming.events &&
+      Array.isArray(incoming.events)
+    ) {
+
+      incoming =
+        incoming.events
+
+    }
+
+    if (!Array.isArray(incoming)) {
+
+      return res.status(400).json({
+
+        ok:
+          false,
+
+        error:
+          'events 必须是数组'
+
+      })
+
+    }
+
+    const cleaned =
+      incoming
+        .filter(event => event && typeof event === 'object')
+        .map(event => normalizeMoodEvent({
+
+          id:
+            event.id || randomUUID(),
+
+          type:
+            event.type || 'emotion',
+
+          source:
+            event.source || 'restored',
+
+          word:
+            event.word ||
+            event.feeling_word ||
+            event.mood ||
+            '情绪波动',
+
+          content:
+            event.content || '',
+
+          valence:
+            event.valence || 0,
+
+          arousal:
+            event.arousal || 0.3,
+
+          importance:
+            event.importance || 3,
+
+          pa_delta:
+            event.pa_delta || 0,
+
+          na_delta:
+            event.na_delta || 0,
+
+          ts:
+            event.ts || Date.now()
+
+        }))
+
+    const mode =
+      body.mode || 'replace'
+
+    let finalEvents
+
+    if (mode === 'append') {
+
+      finalEvents =
+        loadMoodEvents().concat(cleaned)
+
+    } else {
+
+      finalEvents =
+        cleaned
+
+    }
+
+    const ok =
+      saveMoodEvents(finalEvents)
+
+    res.json({
+
+      ok,
+
+      mode,
+
+      imported:
+        cleaned.length,
+
+      total:
+        loadMoodEvents().length,
+
+      mood_file:
+        MOOD_FILE,
+
+      current_mood:
+        calculateCurrentMood(),
+
+      first_event:
+        cleaned[0] || null,
+
+      last_event:
+        cleaned[cleaned.length - 1] || null
+
+    })
+
+  } catch (err) {
+
+    console.log(
+      'import events error',
+      err
+    )
+
+    res.status(500).json({
+
+      ok:
+        false,
+
+      error:
+        String(err.message || err)
+
+    })
+
+  }
 
 })
 
