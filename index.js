@@ -30,7 +30,8 @@ app.use(cors({
   ],
   allowedHeaders: [
     'Content-Type',
-    'mcp-session-id'
+    'mcp-session-id',
+    'Mcp-Session-Id'
   ]
 }))
 
@@ -240,22 +241,6 @@ function saveMoodEvents(events) {
 
 
 
-function clamp(value) {
-
-  return Math.max(
-    0,
-    Math.min(
-      1,
-      Number(value || 0)
-    )
-  )
-
-}
-
-
-
-
-
 function toNumber(value, fallback = 0) {
 
   const n =
@@ -268,6 +253,22 @@ function toNumber(value, fallback = 0) {
   }
 
   return n
+
+}
+
+
+
+
+
+function clamp(value) {
+
+  return Math.max(
+    0,
+    Math.min(
+      1,
+      Number(value || 0)
+    )
+  )
 
 }
 
@@ -821,7 +822,8 @@ function createMcpServer() {
       description:
         '实时计算并获取当前情绪状态',
 
-      inputSchema: {}
+      inputSchema:
+        z.object({})
 
     },
 
@@ -869,40 +871,41 @@ function createMcpServer() {
       description:
         '写入一条情绪事件，会立刻影响 current_mood',
 
-      inputSchema: {
+      inputSchema:
+        z.object({
 
-        word:
-          z.string()
-            .describe('情绪词，例如 开心、低落、焦虑、安心'),
+          word:
+            z.string()
+              .describe('情绪词，例如 开心、低落、焦虑、安心'),
 
-        content:
-          z.string()
-            .describe('情绪事件内容'),
+          content:
+            z.string()
+              .describe('情绪事件内容'),
 
-        valence:
-          flexibleNumber
-            .describe('效价，范围 -1 到 1'),
+          valence:
+            flexibleNumber
+              .describe('效价，范围 -1 到 1'),
 
-        arousal:
-          flexibleNumber
-            .describe('唤醒度，范围 0 到 1'),
+          arousal:
+            flexibleNumber
+              .describe('唤醒度，范围 0 到 1'),
 
-        importance:
-          flexibleNumber
-            .optional()
-            .describe('重要度，范围 1 到 10'),
+          importance:
+            flexibleNumber
+              .optional()
+              .describe('重要度，范围 1 到 10'),
 
-        pa_delta:
-          flexibleNumber
-            .optional()
-            .describe('正向情绪变化'),
+          pa_delta:
+            flexibleNumber
+              .optional()
+              .describe('正向情绪变化'),
 
-        na_delta:
-          flexibleNumber
-            .optional()
-            .describe('负向情绪变化')
+          na_delta:
+            flexibleNumber
+              .optional()
+              .describe('负向情绪变化')
 
-      }
+        })
 
     },
 
@@ -949,9 +952,6 @@ function createMcpServer() {
 
         })
 
-      const events =
-        loadMoodEvents()
-
       const mood =
         calculateCurrentMood()
 
@@ -981,7 +981,7 @@ function createMcpServer() {
                     saved.ok,
 
                   events_count:
-                    events.length,
+                    saved.events_count,
 
                   current_mood:
                     mood,
@@ -1020,13 +1020,14 @@ function createMcpServer() {
       description:
         '根据关键词搜索历史记忆',
 
-      inputSchema: {
+      inputSchema:
+        z.object({
 
-        query:
-          z.string()
-            .describe('要搜索的关键词')
+          query:
+            z.string()
+              .describe('要搜索的关键词')
 
-      }
+        })
 
     },
 
@@ -1083,13 +1084,14 @@ function createMcpServer() {
       description:
         '写入一条长期记忆，不会自动改变情绪。要改变情绪请调用 write_emotion_event',
 
-      inputSchema: {
+      inputSchema:
+        z.object({
 
-        content:
-          z.string()
-            .describe('要写入的记忆内容')
+          content:
+            z.string()
+              .describe('要写入的记忆内容')
 
-      }
+        })
 
     },
 
@@ -1110,7 +1112,8 @@ function createMcpServer() {
 
       })
 
-      saveMemory(memories)
+      const ok =
+        saveMemory(memories)
 
       return {
 
@@ -1124,8 +1127,7 @@ function createMcpServer() {
             text:
               JSON.stringify(
                 {
-                  ok:
-                    true,
+                  ok,
 
                   result:
                     'memory saved',
@@ -1481,6 +1483,9 @@ app.get('/health',
     name:
       'emotion-system',
 
+    sdk:
+      '2.2.0',
+
     time:
       new Date().toISOString()
 
@@ -1832,7 +1837,7 @@ const PORT =
 app.listen(PORT, () => {
 
   console.log(
-    'emotion mcp server running'
+    'emotion mcp server running sdk 2.2.0'
   )
 
 })
