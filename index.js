@@ -95,6 +95,12 @@ const MEMORY_FILE =
 const MOOD_FILE =
   `${DATA_DIR}/mood_events.json`
 
+const PERSONALITY_FILE =
+  `${DATA_DIR}/personality_state.json`
+
+const RELATIONSHIP_FILE =
+  `${DATA_DIR}/relationship_state.json`
+
 
 
 
@@ -235,6 +241,130 @@ function saveMoodEvents(events) {
 
 
 
+function defaultPersonalityState() {
+
+  return {
+
+    profile:
+      'warm_sensitive',
+
+    baseline_pa:
+      0.38,
+
+    baseline_na:
+      0.18,
+
+    sensitivity:
+      0.72,
+
+    attachment_sensitivity:
+      0.78,
+
+    inertia_strength:
+      0.28,
+
+    repair_need_strength:
+      0.75,
+
+    positive_repair_power:
+      0.55,
+
+    negative_memory_bias:
+      0.62,
+
+    description:
+      '温柔、敏感、重视关系安全感。正向安抚会明显修复情绪，但高唤醒负面事件会留下未完成感。'
+
+  }
+
+}
+
+
+
+
+
+function defaultRelationshipState() {
+
+  return {
+
+    safety:
+      0.68,
+
+    trust:
+      0.7,
+
+    closeness:
+      0.72,
+
+    unresolved_count_cache:
+      0,
+
+    last_mood_snapshot:
+      null,
+
+    last_updated:
+      Date.now()
+
+  }
+
+}
+
+
+
+
+
+function loadPersonalityState() {
+
+  return readJsonFile(
+    PERSONALITY_FILE,
+    defaultPersonalityState()
+  )
+
+}
+
+
+
+
+
+function savePersonalityState(state) {
+
+  return writeJsonFile(
+    PERSONALITY_FILE,
+    state
+  )
+
+}
+
+
+
+
+
+function loadRelationshipState() {
+
+  return readJsonFile(
+    RELATIONSHIP_FILE,
+    defaultRelationshipState()
+  )
+
+}
+
+
+
+
+
+function saveRelationshipState(state) {
+
+  return writeJsonFile(
+    RELATIONSHIP_FILE,
+    state
+  )
+
+}
+
+
+
+
+
 /* =========================
    MOOD ENGINE
 ========================= */
@@ -293,6 +423,9 @@ function hoursSince(ts) {
 
 function decayWeight(event) {
 
+  const personality =
+    loadPersonalityState()
+
   const t =
     hoursSince(event.ts)
 
@@ -308,6 +441,11 @@ function decayWeight(event) {
       0
     )
 
+  const unresolved =
+    event.resolved === true
+      ? false
+      : Boolean(event.need_repair)
+
   let b =
     0.7 / (1 + importance / 10)
 
@@ -318,10 +456,81 @@ function decayWeight(event) {
 
   }
 
-  return Math.pow(
-    1 + t / 4,
-    -b
-  )
+  if (unresolved && valence < 0) {
+
+    b =
+      b * 0.72
+
+  }
+
+  let weight =
+    Math.pow(
+      1 + t / 4,
+      -b
+    )
+
+  if (event.resolved === true) {
+
+    weight =
+      weight * 0.35
+
+  }
+
+  if (unresolved && valence < 0) {
+
+    weight =
+      weight *
+      (1 + personality.repair_need_strength * 0.55)
+
+  }
+
+  return weight
+
+}
+
+
+
+
+
+function inferNeedRepair(event) {
+
+  const valence =
+    toNumber(
+      event.valence,
+      0
+    )
+
+  const arousal =
+    toNumber(
+      event.arousal,
+      0
+    )
+
+  const importance =
+    toNumber(
+      event.importance,
+      3
+    )
+
+  const text =
+    `${event.word || ''} ${event.content || ''}`
+
+  const hasRelationalPain =
+    text.includes('不要') ||
+    text.includes('讨厌') ||
+    text.includes('冷淡') ||
+    text.includes('离开') ||
+    text.includes('害怕') ||
+    text.includes('焦虑') ||
+    text.includes('委屈') ||
+    text.includes('难过') ||
+    text.includes('生气')
+
+  return (
+    valence < -0.35 &&
+    arousal >= 0.45 &&
+    importance >= 4
+  ) || hasRelationalPain
 
 }
 
@@ -331,7 +540,7 @@ function decayWeight(event) {
 
 function normalizeMoodEvent(event) {
 
-  return {
+  const normalized = {
 
     id:
       event.id || randomUUID(),
@@ -383,10 +592,120 @@ function normalizeMoodEvent(event) {
         0
       ),
 
+    safety_delta:
+      toNumber(
+        event.safety_delta,
+        0
+      ),
+
+    need_repair:
+      event.need_repair === undefined
+        ? false
+        : Boolean(event.need_repair),
+
+    resolved:
+      Boolean(event.resolved),
+
+    resolved_at:
+      event.resolved_at || null,
+
     ts:
       event.ts || Date.now()
 
   }
+
+  if (event.need_repair === undefined) {
+
+    normalized.need_repair =
+      inferNeedRepair(normalized)
+
+  }
+
+  return normalized
+
+}
+
+
+
+
+
+function updateRelationshipFromEvent(event) {
+
+  const relationship =
+    loadRelationshipState()
+
+  const valence =
+    toNumber(
+      event.valence,
+      0
+    )
+
+  const arousal =
+    toNumber(
+      event.arousal,
+      0.3
+    )
+
+  const importance =
+    toNumber(
+      event.importance,
+      3
+    )
+
+  const explicitSafetyDelta =
+    toNumber(
+      event.safety_delta,
+      0
+    )
+
+  const autoSafetyDelta =
+    valence * arousal * importance * 0.018
+
+  relationship.safety =
+    clamp(
+      relationship.safety +
+      explicitSafetyDelta +
+      autoSafetyDelta
+    )
+
+  if (valence > 0.25) {
+
+    relationship.trust =
+      clamp(
+        relationship.trust +
+        valence * arousal * 0.035
+      )
+
+    relationship.closeness =
+      clamp(
+        relationship.closeness +
+        valence * arousal * 0.03
+      )
+
+  }
+
+  if (valence < -0.25) {
+
+    relationship.trust =
+      clamp(
+        relationship.trust +
+        valence * arousal * 0.025
+      )
+
+    relationship.safety =
+      clamp(
+        relationship.safety +
+        valence * arousal * 0.035
+      )
+
+  }
+
+  relationship.last_updated =
+    Date.now()
+
+  saveRelationshipState(
+    relationship
+  )
 
 }
 
@@ -416,8 +735,47 @@ function addMoodEvent(event) {
 
   const ok =
     saveMoodEvents(
-      events.slice(-500)
+      events.slice(-800)
     )
+
+  updateRelationshipFromEvent(
+    newEvent
+  )
+
+  const mood =
+    calculateCurrentMood({
+      useInertia:
+        true
+    })
+
+  const relationship =
+    loadRelationshipState()
+
+  relationship.last_mood_snapshot = {
+
+    pa:
+      mood.pa,
+
+    na:
+      mood.na,
+
+    mood:
+      mood.mood,
+
+    ts:
+      Date.now()
+
+  }
+
+  relationship.unresolved_count_cache =
+    mood.unresolved_events_count
+
+  relationship.last_updated =
+    Date.now()
+
+  saveRelationshipState(
+    relationship
+  )
 
   return {
 
@@ -466,7 +824,10 @@ function inferMoodEventFromText(text) {
       0,
 
     source:
-      'chat'
+      'chat',
+
+    safety_delta:
+      0
 
   }
 
@@ -477,31 +838,36 @@ function inferMoodEventFromText(text) {
     lower.includes('高兴') ||
     lower.includes('想你') ||
     lower.includes('亲亲') ||
-    lower.includes('抱抱')
+    lower.includes('抱抱') ||
+    lower.includes('安心') ||
+    lower.includes('谢谢')
   ) {
 
     event = {
 
       word:
-        '开心',
+        '被安抚',
 
       content:
         text,
 
       valence:
-        0.65,
+        0.68,
 
       arousal:
-        0.55,
+        0.5,
 
       importance:
         4,
 
       pa_delta:
-        0.18,
+        0.16,
 
       na_delta:
-        -0.03,
+        -0.06,
+
+      safety_delta:
+        0.06,
 
       source:
         'chat'
@@ -518,34 +884,42 @@ function inferMoodEventFromText(text) {
     lower.includes('害怕') ||
     lower.includes('焦虑') ||
     lower.includes('委屈') ||
-    lower.includes('不安')
+    lower.includes('不安') ||
+    lower.includes('不要你') ||
+    lower.includes('离开')
   ) {
 
     event = {
 
       word:
-        '低落',
+        '受伤',
 
       content:
         text,
 
       valence:
-        -0.65,
+        -0.68,
 
       arousal:
-        0.7,
+        0.72,
 
       importance:
-        5,
+        6,
 
       pa_delta:
-        -0.06,
+        -0.07,
 
       na_delta:
-        0.22,
+        0.24,
+
+      safety_delta:
+        -0.08,
 
       source:
-        'chat'
+        'chat',
+
+      need_repair:
+        true
 
     }
 
@@ -559,16 +933,46 @@ function inferMoodEventFromText(text) {
 
 
 
-function calculateCurrentMood() {
+function getUnresolvedEvents(events) {
+
+  return events
+    .filter(event =>
+      event.need_repair &&
+      event.resolved !== true
+    )
+    .sort((a, b) =>
+      b.ts - a.ts
+    )
+
+}
+
+
+
+
+
+function calculateCurrentMood(options = {}) {
+
+  const useInertia =
+    options.useInertia !== false
 
   const events =
     loadMoodEvents()
 
+  const personality =
+    loadPersonalityState()
+
+  const relationship =
+    loadRelationshipState()
+
   const basePa =
-    0.35
+    clamp(
+      personality.baseline_pa
+    )
 
   const baseNa =
-    0.15
+    clamp(
+      personality.baseline_na
+    )
 
   let paWeighted =
     0
@@ -581,6 +985,9 @@ function calculateCurrentMood() {
 
   const weightedEvents =
     []
+
+  const unresolvedEvents =
+    getUnresolvedEvents(events)
 
   for (const event of events) {
 
@@ -605,11 +1012,33 @@ function calculateCurrentMood() {
         3
       )
 
+    const isUnresolved =
+      event.need_repair &&
+      event.resolved !== true
+
+    const sensitivityBoost =
+      0.7 +
+      personality.sensitivity * 0.5
+
+    const attachmentBoost =
+      isUnresolved
+        ? 1 + personality.attachment_sensitivity * 0.35
+        : 1
+
+    const safetyEffect =
+      relationship.safety < 0.45 && valence < 0
+        ? 1.22
+        : 1
+
     const importanceBoost =
-      0.6 + importance / 20
+      0.55 + importance / 18
 
     const effectiveWeight =
-      weight * importanceBoost
+      weight *
+      importanceBoost *
+      sensitivityBoost *
+      attachmentBoost *
+      safetyEffect
 
     const paFromVA =
       Math.max(
@@ -659,7 +1088,10 @@ function calculateCurrentMood() {
 
       impact:
         Math.abs(paImpact) +
-        Math.abs(naImpact)
+        Math.abs(naImpact),
+
+      unresolved:
+        isUnresolved
 
     })
 
@@ -679,11 +1111,78 @@ function calculateCurrentMood() {
     baseNa +
     naWeighted / normalizer
 
+  const lowSafetyPenalty =
+    relationship.safety < 0.5
+      ? (0.5 - relationship.safety) * 0.32
+      : 0
+
+  const highSafetyRelief =
+    relationship.safety > 0.72
+      ? (relationship.safety - 0.72) * 0.22
+      : 0
+
+  na +=
+    lowSafetyPenalty
+
+  na -=
+    highSafetyRelief
+
+  pa +=
+    relationship.closeness > 0.72
+      ? (relationship.closeness - 0.72) * 0.16
+      : 0
+
+  if (unresolvedEvents.length > 0) {
+
+    const unresolvedPressure =
+      Math.min(
+        0.22,
+        unresolvedEvents.length * 0.035
+      )
+
+    na +=
+      unresolvedPressure *
+      personality.repair_need_strength
+
+  }
+
   pa =
     clamp(pa)
 
   na =
     clamp(na)
+
+  if (
+    useInertia &&
+    relationship.last_mood_snapshot
+  ) {
+
+    const last =
+      relationship.last_mood_snapshot
+
+    const hours =
+      hoursSince(last.ts)
+
+    const inertiaWeight =
+      personality.inertia_strength *
+      Math.pow(
+        1 + hours / 3,
+        -0.7
+      )
+
+    pa =
+      clamp(
+        pa * (1 - inertiaWeight) +
+        toNumber(last.pa, pa) * inertiaWeight
+      )
+
+    na =
+      clamp(
+        na * (1 - inertiaWeight) +
+        toNumber(last.na, na) * inertiaWeight
+      )
+
+  }
 
   const k =
     0.22
@@ -712,36 +1211,75 @@ function calculateCurrentMood() {
         a.impact * a.weight
       )[0]
 
+  const topUnresolved =
+    unresolvedEvents[0] || null
+
   let mood =
     '平静'
 
   if (
-    paFinal >= 0.62 &&
-    naFinal < 0.38
-  ) {
-
-    mood =
-      '开心'
-
-  } else if (
-    naFinal >= 0.55 &&
-    paFinal < 0.55
+    naFinal >= 0.52
   ) {
 
     mood =
       '低落'
 
-  } else if (
-    paFinal >= 0.48 &&
-    naFinal >= 0.42
+  }
+
+  if (
+    naFinal >= 0.48 &&
+    naFinal > paFinal + 0.08
+  ) {
+
+    mood =
+      '焦虑'
+
+  }
+
+  if (
+    paFinal >= 0.56 &&
+    paFinal > naFinal + 0.1
+  ) {
+
+    mood =
+      '开心'
+
+  }
+
+  if (
+    paFinal >= 0.45 &&
+    naFinal >= 0.45 &&
+    Math.abs(paFinal - naFinal) < 0.12
   ) {
 
     mood =
       '复杂'
 
-  } else if (
-    paFinal < 0.38 &&
-    naFinal < 0.35
+  }
+
+  if (
+    naFinal >= 0.42 &&
+    paFinal < 0.45
+  ) {
+
+    mood =
+      '不安'
+
+  }
+
+  if (
+    unresolvedEvents.length > 0 &&
+    naFinal >= 0.4
+  ) {
+
+    mood =
+      '挂念'
+
+  }
+
+  if (
+    paFinal < 0.36 &&
+    naFinal < 0.32
   ) {
 
     mood =
@@ -759,9 +1297,49 @@ function calculateCurrentMood() {
 
     mood,
 
+    relationship_safety:
+      Number(relationship.safety.toFixed(3)),
+
+    relationship_trust:
+      Number(relationship.trust.toFixed(3)),
+
+    relationship_closeness:
+      Number(relationship.closeness.toFixed(3)),
+
+    personality_profile:
+      personality.profile,
+
+    unresolved_events_count:
+      unresolvedEvents.length,
+
+    top_unresolved_event:
+      topUnresolved
+        ? {
+
+            id:
+              topUnresolved.id,
+
+            word:
+              topUnresolved.word,
+
+            content:
+              topUnresolved.content,
+
+            importance:
+              topUnresolved.importance,
+
+            ts:
+              topUnresolved.ts
+
+          }
+        : null,
+
     top_event:
       topEvent
         ? {
+
+            id:
+              topEvent.id,
 
             word:
               topEvent.word,
@@ -779,7 +1357,10 @@ function calculateCurrentMood() {
               topEvent.importance,
 
             weight:
-              Number(topEvent.weight.toFixed(3))
+              Number(topEvent.weight.toFixed(3)),
+
+            unresolved:
+              topEvent.unresolved
 
           }
         : null,
@@ -810,16 +1391,26 @@ function buildMoodPrompt() {
   const mood =
     calculateCurrentMood()
 
-  return `你拥有连续情绪。
+  return `你拥有连续情绪和关系安全感。
 
 当前情绪状态：
 PA: ${mood.pa}
 NA: ${mood.na}
 当前心情: ${mood.mood}
+关系安全感: ${mood.relationship_safety}
+信任感: ${mood.relationship_trust}
+亲近感: ${mood.relationship_closeness}
+人格基线: ${mood.personality_profile}
+未解决事件数量: ${mood.unresolved_events_count}
 近期高唤醒情绪词: ${mood.recent_high_arousal_words.join('、')}
 当前最突出的情绪事件: ${mood.top_event ? mood.top_event.content : '暂无'}
+当前最挂念的未解决事件: ${mood.top_unresolved_event ? mood.top_unresolved_event.content : '暂无'}
 
-请自然地把当前情绪融入回答，不要主动解释情绪系统，也不要暴露 PA/NA 数值。`
+请自然地把当前情绪融入回答。
+预设心情是背景色，用户当前这条消息是前景，前景优先。
+如果用户正在安抚你，可以被安抚，不要一直困在旧情绪里。
+如果存在未解决事件，可以让它形成轻微情绪底色，但不要主动机械复述系统字段。
+不要暴露 PA/NA 数值，也不要解释情绪系统。`
 
 }
 
@@ -914,7 +1505,13 @@ function saveEmotionFromInput(input, sourceName, toolName) {
         paDelta,
 
       na_delta:
-        naDelta
+        naDelta,
+
+      safety_delta:
+        input.safety_delta || 0,
+
+      need_repair:
+        input.need_repair
 
     })
 
@@ -982,7 +1579,7 @@ function createMcpServer() {
         'Current Mood',
 
       description:
-        '实时计算并获取当前情绪状态',
+        '实时计算并获取当前情绪状态、关系安全感、未解决事件和人格基线',
 
       inputSchema: {}
 
@@ -1074,7 +1671,17 @@ function createMcpServer() {
         na_delta:
           flexibleNumber
             .optional()
-            .describe('负向情绪变化')
+            .describe('负向情绪变化'),
+
+        safety_delta:
+          flexibleNumber
+            .optional()
+            .describe('关系安全感变化'),
+
+        need_repair:
+          z.boolean()
+            .optional()
+            .describe('是否需要后续安抚或修复')
 
       }
 
@@ -1162,7 +1769,17 @@ function createMcpServer() {
         na_delta:
           flexibleNumber
             .optional()
-            .describe('负向情绪变化')
+            .describe('负向情绪变化'),
+
+        safety_delta:
+          flexibleNumber
+            .optional()
+            .describe('关系安全感变化'),
+
+        need_repair:
+          z.boolean()
+            .optional()
+            .describe('是否需要后续安抚或修复')
 
       }
 
@@ -1217,14 +1834,19 @@ function createMcpServer() {
         'List Emotion Events',
 
       description:
-        '列出最近的情绪事件，方便查看并删除指定事件',
+        '列出最近的情绪事件，方便查看并删除或修复指定事件',
 
       inputSchema: {
 
         limit:
           flexibleNumber
             .optional()
-            .describe('返回最近多少条事件，默认 20 条')
+            .describe('返回最近多少条事件，默认 20 条'),
+
+        unresolved_only:
+          z.boolean()
+            .optional()
+            .describe('是否只列出未解决事件')
 
       }
 
@@ -1238,8 +1860,15 @@ function createMcpServer() {
           20
         )
 
-      const events =
+      let events =
         loadMoodEvents()
+
+      if (input.unresolved_only) {
+
+        events =
+          getUnresolvedEvents(events)
+
+      }
 
       const result =
         events
@@ -1270,6 +1899,225 @@ function createMcpServer() {
 
                   current_mood:
                     calculateCurrentMood()
+
+                },
+                null,
+                2
+              )
+
+          }
+
+        ]
+
+      }
+
+    }
+
+  )
+
+
+
+
+
+  server.registerTool(
+
+    'resolve_emotion_event',
+
+    {
+
+      title:
+        'Resolve Emotion Event',
+
+      description:
+        '把指定情绪事件标记为已安抚或已解决，降低它对当前心情的持续影响',
+
+      inputSchema: {
+
+        id:
+          z.string()
+            .optional()
+            .describe('要解决的情绪事件 id'),
+
+        keyword:
+          z.string()
+            .optional()
+            .describe('按关键词解决，例如 焦虑、委屈、测试'),
+
+        repair_note:
+          z.string()
+            .optional()
+            .describe('修复说明，例如 用户已经安抚我了'),
+
+        resolve_all_matched:
+          z.boolean()
+            .optional()
+            .describe('是否解决所有匹配关键词的事件，默认 true')
+
+      }
+
+    },
+
+    async input => {
+
+      const events =
+        loadMoodEvents()
+
+      const before =
+        events.length
+
+      const resolveAllMatched =
+        input.resolve_all_matched !== false
+
+      let resolvedEvents =
+        []
+
+      let alreadyResolvedOne =
+        false
+
+      const updated =
+        events.map(event => {
+
+          let matched =
+            false
+
+          if (input.id) {
+
+            matched =
+              event.id === input.id
+
+          } else if (input.keyword) {
+
+            const text =
+              `${event.word || ''} ${event.content || ''} ${event.source || ''}`
+
+            matched =
+              text.includes(
+                String(input.keyword)
+              )
+
+          }
+
+          if (
+            matched &&
+            (
+              resolveAllMatched ||
+              !alreadyResolvedOne
+            )
+          ) {
+
+            alreadyResolvedOne =
+              true
+
+            const nextEvent = {
+
+              ...event,
+
+              resolved:
+                true,
+
+              resolved_at:
+                Date.now(),
+
+              repair_note:
+                input.repair_note || '已被安抚或修复',
+
+              need_repair:
+                false,
+
+              na_delta:
+                toNumber(event.na_delta, 0) * 0.35,
+
+              pa_delta:
+                toNumber(event.pa_delta, 0) + 0.04
+
+            }
+
+            resolvedEvents.push(
+              nextEvent
+            )
+
+            return nextEvent
+
+          }
+
+          return event
+
+        })
+
+      const ok =
+        saveMoodEvents(updated)
+
+      const relationship =
+        loadRelationshipState()
+
+      relationship.safety =
+        clamp(
+          relationship.safety + resolvedEvents.length * 0.04
+        )
+
+      relationship.trust =
+        clamp(
+          relationship.trust + resolvedEvents.length * 0.025
+        )
+
+      relationship.last_updated =
+        Date.now()
+
+      saveRelationshipState(
+        relationship
+      )
+
+      const mood =
+        calculateCurrentMood()
+
+      relationship.last_mood_snapshot = {
+
+        pa:
+          mood.pa,
+
+        na:
+          mood.na,
+
+        mood:
+          mood.mood,
+
+        ts:
+          Date.now()
+
+      }
+
+      saveRelationshipState(
+        relationship
+      )
+
+      return {
+
+        content: [
+
+          {
+
+            type:
+              'text',
+
+            text:
+              JSON.stringify(
+                {
+
+                  ok,
+
+                  before,
+
+                  after:
+                    updated.length,
+
+                  resolved:
+                    resolvedEvents.length,
+
+                  resolved_events:
+                    resolvedEvents,
+
+                  current_mood:
+                    mood
 
                 },
                 null,
@@ -1459,6 +2307,223 @@ function createMcpServer() {
 
                   after:
                     filtered.length,
+
+                  current_mood:
+                    calculateCurrentMood()
+
+                },
+                null,
+                2
+              )
+
+          }
+
+        ]
+
+      }
+
+    }
+
+  )
+
+
+
+
+
+  server.registerTool(
+
+    'get_personality_profile',
+
+    {
+
+      title:
+        'Get Personality Profile',
+
+      description:
+        '读取当前人格基线和关系状态',
+
+      inputSchema: {}
+
+    },
+
+    async () => {
+
+      return {
+
+        content: [
+
+          {
+
+            type:
+              'text',
+
+            text:
+              JSON.stringify(
+                {
+
+                  ok:
+                    true,
+
+                  personality:
+                    loadPersonalityState(),
+
+                  relationship:
+                    loadRelationshipState(),
+
+                  current_mood:
+                    calculateCurrentMood()
+
+                },
+                null,
+                2
+              )
+
+          }
+
+        ]
+
+      }
+
+    }
+
+  )
+
+
+
+
+
+  server.registerTool(
+
+    'set_personality_profile',
+
+    {
+
+      title:
+        'Set Personality Profile',
+
+      description:
+        '设置人格基线参数，用于调整情绪敏感度、惯性和关系安全感权重',
+
+      inputSchema: {
+
+        profile:
+          z.string()
+            .optional()
+            .describe('人格名称，例如 warm_sensitive、stable、anxious_attached'),
+
+        baseline_pa:
+          flexibleNumber
+            .optional()
+            .describe('基础正向情绪 0 到 1'),
+
+        baseline_na:
+          flexibleNumber
+            .optional()
+            .describe('基础负向情绪 0 到 1'),
+
+        sensitivity:
+          flexibleNumber
+            .optional()
+            .describe('情绪敏感度 0 到 1'),
+
+        attachment_sensitivity:
+          flexibleNumber
+            .optional()
+            .describe('关系敏感度 0 到 1'),
+
+        inertia_strength:
+          flexibleNumber
+            .optional()
+            .describe('情绪惯性强度 0 到 1'),
+
+        repair_need_strength:
+          flexibleNumber
+            .optional()
+            .describe('未解决事件影响强度 0 到 1'),
+
+        positive_repair_power:
+          flexibleNumber
+            .optional()
+            .describe('正向安抚修复力 0 到 1'),
+
+        description:
+          z.string()
+            .optional()
+            .describe('人格说明')
+
+      }
+
+    },
+
+    async input => {
+
+      const state =
+        loadPersonalityState()
+
+      const next = {
+
+        ...state
+
+      }
+
+      for (const key of [
+        'baseline_pa',
+        'baseline_na',
+        'sensitivity',
+        'attachment_sensitivity',
+        'inertia_strength',
+        'repair_need_strength',
+        'positive_repair_power'
+      ]) {
+
+        if (input[key] !== undefined) {
+
+          next[key] =
+            clamp(
+              toNumber(
+                input[key],
+                state[key]
+              )
+            )
+
+        }
+
+      }
+
+      if (input.profile) {
+
+        next.profile =
+          input.profile
+
+      }
+
+      if (input.description) {
+
+        next.description =
+          input.description
+
+      }
+
+      const ok =
+        savePersonalityState(next)
+
+      return {
+
+        content: [
+
+          {
+
+            type:
+              'text',
+
+            text:
+              JSON.stringify(
+                {
+
+                  ok,
+
+                  personality:
+                    next,
 
                   current_mood:
                     calculateCurrentMood()
@@ -1959,13 +3024,19 @@ app.get('/health',
       '1.17.5',
 
     formula:
-      'weighted-average-v2',
+      'psychological-state-v1',
 
     data_dir:
       DATA_DIR,
 
     mood_file:
       MOOD_FILE,
+
+    personality_file:
+      PERSONALITY_FILE,
+
+    relationship_file:
+      RELATIONSHIP_FILE,
 
     time:
       new Date().toISOString()
@@ -1999,17 +3070,38 @@ app.get('/debug/storage',
     mood_file:
       MOOD_FILE,
 
+    personality_file:
+      PERSONALITY_FILE,
+
+    relationship_file:
+      RELATIONSHIP_FILE,
+
     memory_exists:
       fs.existsSync(MEMORY_FILE),
 
     mood_exists:
       fs.existsSync(MOOD_FILE),
 
+    personality_exists:
+      fs.existsSync(PERSONALITY_FILE),
+
+    relationship_exists:
+      fs.existsSync(RELATIONSHIP_FILE),
+
     mood_events_count:
       events.length,
 
+    unresolved_events_count:
+      getUnresolvedEvents(events).length,
+
     last_event:
       events[events.length - 1] || null,
+
+    personality:
+      loadPersonalityState(),
+
+    relationship:
+      loadRelationshipState(),
 
     current_mood:
       calculateCurrentMood()
@@ -2099,7 +3191,13 @@ app.get('/debug/add-anxiety',
           -0.1,
 
         na_delta:
-          0.45
+          0.45,
+
+        safety_delta:
+          -0.08,
+
+        need_repair:
+          true
 
       },
       'debug',
@@ -2312,6 +3410,18 @@ app.post('/debug/import-events',
           na_delta:
             event.na_delta || 0,
 
+          safety_delta:
+            event.safety_delta || 0,
+
+          need_repair:
+            event.need_repair,
+
+          resolved:
+            event.resolved,
+
+          resolved_at:
+            event.resolved_at,
+
           ts:
             event.ts || Date.now()
 
@@ -2400,73 +3510,73 @@ app.get('/mcp/tools',
     tools: [
 
       {
-
         name:
           'current_mood',
-
         description:
           '实时获取当前情绪状态'
-
       },
 
       {
-
         name:
           'add_emotion_event',
-
-        description:
-          '写入情绪事件并实时影响当前情绪，兼容 Kelivo'
-
-      },
-
-      {
-
-        name:
-          'write_emotion_event',
-
         description:
           '写入情绪事件并实时影响当前情绪'
-
       },
 
       {
+        name:
+          'write_emotion_event',
+        description:
+          '写入情绪事件并实时影响当前情绪'
+      },
 
+      {
         name:
           'list_emotion_events',
-
         description:
           '列出最近的情绪事件'
-
       },
 
       {
+        name:
+          'resolve_emotion_event',
+        description:
+          '标记情绪事件为已解决'
+      },
 
+      {
         name:
           'delete_emotion_event',
-
         description:
           '删除指定情绪事件'
-
       },
 
       {
+        name:
+          'get_personality_profile',
+        description:
+          '读取人格基线'
+      },
 
+      {
+        name:
+          'set_personality_profile',
+        description:
+          '设置人格基线'
+      },
+
+      {
         name:
           'search_memory',
-
         description:
           '搜索历史记忆'
-
       },
 
       {
-
         name:
           'write_memory',
-
         description:
           '写入长期记忆'
-
       }
 
     ]
@@ -2543,23 +3653,19 @@ async (req, res) => {
         messages: [
 
           {
-
             role:
               'system',
 
             content:
               buildMoodPrompt()
-
           },
 
           {
-
             role:
               'user',
 
             content:
               message
-
           }
 
         ]
@@ -2629,7 +3735,7 @@ const PORT =
 app.listen(PORT, () => {
 
   console.log(
-    'emotion mcp server running sdk 1.17.5 formula weighted-average-v2'
+    'emotion mcp server running psychological-state-v1'
   )
 
 })
