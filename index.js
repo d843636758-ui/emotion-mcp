@@ -557,11 +557,20 @@ function calculateCurrentMood() {
   const events =
     loadMoodEvents()
 
-  let pa =
+  const basePa =
     0.35
 
-  let na =
+  const baseNa =
     0.15
+
+  let paWeighted =
+    0
+
+  let naWeighted =
+    0
+
+  let totalWeight =
+    0
 
   const weightedEvents =
     []
@@ -582,6 +591,18 @@ function calculateCurrentMood() {
         event.arousal,
         0.3
       )
+
+    const importance =
+      toNumber(
+        event.importance,
+        3
+      )
+
+    const importanceBoost =
+      0.6 + importance / 20
+
+    const effectiveWeight =
+      weight * importanceBoost
 
     const paFromVA =
       Math.max(
@@ -607,25 +628,49 @@ function calculateCurrentMood() {
         0
       )
 
-    pa +=
-      (paFromVA + paDelta) * weight
+    const paImpact =
+      paFromVA + paDelta
 
-    na +=
-      (naFromVA + naDelta) * weight
+    const naImpact =
+      naFromVA + naDelta
+
+    paWeighted +=
+      paImpact * effectiveWeight
+
+    naWeighted +=
+      naImpact * effectiveWeight
+
+    totalWeight +=
+      effectiveWeight
 
     weightedEvents.push({
 
       ...event,
 
-      weight,
+      weight:
+        effectiveWeight,
 
       impact:
-        Math.abs(paFromVA + paDelta) +
-        Math.abs(naFromVA + naDelta)
+        Math.abs(paImpact) +
+        Math.abs(naImpact)
 
     })
 
   }
+
+  const normalizer =
+    Math.max(
+      1,
+      totalWeight
+    )
+
+  let pa =
+    basePa +
+    paWeighted / normalizer
+
+  let na =
+    baseNa +
+    naWeighted / normalizer
 
   pa =
     clamp(pa)
@@ -634,7 +679,7 @@ function calculateCurrentMood() {
     clamp(na)
 
   const k =
-    0.3
+    0.22
 
   const paFinal =
     clamp(
@@ -680,8 +725,8 @@ function calculateCurrentMood() {
       '低落'
 
   } else if (
-    paFinal >= 0.5 &&
-    naFinal >= 0.45
+    paFinal >= 0.48 &&
+    naFinal >= 0.42
   ) {
 
     mood =
@@ -1544,7 +1589,7 @@ function createMcpServer() {
             type:
               'text',
 
-              text:
+            text:
               JSON.stringify(
                 {
                   ok,
@@ -1905,6 +1950,9 @@ app.get('/health',
 
     sdk:
       '1.17.5',
+
+    formula:
+      'weighted-average-v2',
 
     time:
       new Date().toISOString()
@@ -2294,7 +2342,7 @@ const PORT =
 app.listen(PORT, () => {
 
   console.log(
-    'emotion mcp server running sdk 1.17.5'
+    'emotion mcp server running sdk 1.17.5 formula weighted-average-v2'
   )
 
 })
