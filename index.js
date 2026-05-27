@@ -296,6 +296,12 @@ function defaultRelationshipState() {
     closeness:
       0.72,
 
+    relationship_profile:
+      'close_and_sensitive',
+
+    description:
+      '亲近、信任较高，但关系安全感仍会被冷淡、误解、争执和离开感影响。',
+
     unresolved_count_cache:
       0,
 
@@ -608,6 +614,9 @@ function normalizeMoodEvent(event) {
 
     resolved_at:
       event.resolved_at || null,
+
+    repair_note:
+      event.repair_note || null,
 
     ts:
       event.ts || Date.now()
@@ -1306,6 +1315,9 @@ function calculateCurrentMood(options = {}) {
     relationship_closeness:
       Number(relationship.closeness.toFixed(3)),
 
+    relationship_profile:
+      relationship.relationship_profile,
+
     personality_profile:
       personality.profile,
 
@@ -1400,6 +1412,7 @@ NA: ${mood.na}
 关系安全感: ${mood.relationship_safety}
 信任感: ${mood.relationship_trust}
 亲近感: ${mood.relationship_closeness}
+关系基调: ${mood.relationship_profile}
 人格基线: ${mood.personality_profile}
 未解决事件数量: ${mood.unresolved_events_count}
 近期高唤醒情绪词: ${mood.recent_high_arousal_words.join('、')}
@@ -2446,6 +2459,11 @@ function createMcpServer() {
             .optional()
             .describe('正向安抚修复力 0 到 1'),
 
+        negative_memory_bias:
+          flexibleNumber
+            .optional()
+            .describe('负面记忆权重 0 到 1'),
+
         description:
           z.string()
             .optional()
@@ -2473,7 +2491,8 @@ function createMcpServer() {
         'attachment_sensitivity',
         'inertia_strength',
         'repair_need_strength',
-        'positive_repair_power'
+        'positive_repair_power',
+        'negative_memory_bias'
       ]) {
 
         if (input[key] !== undefined) {
@@ -2523,6 +2542,227 @@ function createMcpServer() {
                   ok,
 
                   personality:
+                    next,
+
+                  current_mood:
+                    calculateCurrentMood()
+
+                },
+                null,
+                2
+              )
+
+          }
+
+        ]
+
+      }
+
+    }
+
+  )
+
+
+
+
+
+  server.registerTool(
+
+    'get_relationship_state',
+
+    {
+
+      title:
+        'Get Relationship State',
+
+      description:
+        '读取当前关系底色，包括安全感、信任感、亲近感和关系说明',
+
+      inputSchema: {}
+
+    },
+
+    async () => {
+
+      return {
+
+        content: [
+
+          {
+
+            type:
+              'text',
+
+            text:
+              JSON.stringify(
+                {
+
+                  ok:
+                    true,
+
+                  relationship:
+                    loadRelationshipState(),
+
+                  current_mood:
+                    calculateCurrentMood()
+
+                },
+                null,
+                2
+              )
+
+          }
+
+        ]
+
+      }
+
+    }
+
+  )
+
+
+
+
+
+  server.registerTool(
+
+    'set_relationship_state',
+
+    {
+
+      title:
+        'Set Relationship State',
+
+      description:
+        '设置关系底色。用于初始化或校准安全感、信任感、亲近感，不建议频繁重写',
+
+      inputSchema: {
+
+        safety:
+          flexibleNumber
+            .optional()
+            .describe('关系安全感 0 到 1'),
+
+        trust:
+          flexibleNumber
+            .optional()
+            .describe('信任感 0 到 1'),
+
+        closeness:
+          flexibleNumber
+            .optional()
+            .describe('亲近感 0 到 1'),
+
+        relationship_profile:
+          z.string()
+            .optional()
+            .describe('关系基调名称，例如 close_and_sensitive、stable_partner'),
+
+        description:
+          z.string()
+            .optional()
+            .describe('关系说明'),
+
+        clear_last_mood_snapshot:
+          z.boolean()
+            .optional()
+            .describe('是否清除上一轮情绪惯性快照')
+
+      }
+
+    },
+
+    async input => {
+
+      const state =
+        loadRelationshipState()
+
+      const next = {
+
+        ...state
+
+      }
+
+      if (input.safety !== undefined) {
+
+        next.safety =
+          clamp(
+            toNumber(
+              input.safety,
+              state.safety
+            )
+          )
+
+      }
+
+      if (input.trust !== undefined) {
+
+        next.trust =
+          clamp(
+            toNumber(
+              input.trust,
+              state.trust
+            )
+          )
+
+      }
+
+      if (input.closeness !== undefined) {
+
+        next.closeness =
+          clamp(
+            toNumber(
+              input.closeness,
+              state.closeness
+            )
+          )
+
+      }
+
+      if (input.relationship_profile) {
+
+        next.relationship_profile =
+          input.relationship_profile
+
+      }
+
+      if (input.description) {
+
+        next.description =
+          input.description
+
+      }
+
+      if (input.clear_last_mood_snapshot) {
+
+        next.last_mood_snapshot =
+          null
+
+      }
+
+      next.last_updated =
+        Date.now()
+
+      const ok =
+        saveRelationshipState(next)
+
+      return {
+
+        content: [
+
+          {
+
+            type:
+              'text',
+
+            text:
+              JSON.stringify(
+                {
+
+                  ok,
+
+                  relationship:
                     next,
 
                   current_mood:
@@ -3024,7 +3264,7 @@ app.get('/health',
       '1.17.5',
 
     formula:
-      'psychological-state-v1',
+      'psychological-state-v2-with-relationship-tools',
 
     data_dir:
       DATA_DIR,
@@ -3422,6 +3662,9 @@ app.post('/debug/import-events',
           resolved_at:
             event.resolved_at,
 
+          repair_note:
+            event.repair_note,
+
           ts:
             event.ts || Date.now()
 
@@ -3507,13 +3750,30 @@ app.get('/mcp/tools',
     note:
       'Debug only. Kelivo should connect to /mcp for Streamable HTTP or /sse for SSE.',
 
+    architecture:
+      {
+
+        personality_state:
+          'AI 的人格体质，长期稳定，不随普通聊天乱变',
+
+        relationship_state:
+          '你们之间的关系底色，包括安全感、信任感、亲近感',
+
+        mood_events:
+          '每一次具体发生的情绪事件',
+
+        current_mood:
+          '由人格体质、关系底色、事件库综合计算出的当前状态'
+
+      },
+
     tools: [
 
       {
         name:
           'current_mood',
         description:
-          '实时获取当前情绪状态'
+          '实时获取当前综合心理状态'
       },
 
       {
@@ -3563,6 +3823,20 @@ app.get('/mcp/tools',
           'set_personality_profile',
         description:
           '设置人格基线'
+      },
+
+      {
+        name:
+          'get_relationship_state',
+        description:
+          '读取关系底色'
+      },
+
+      {
+        name:
+          'set_relationship_state',
+        description:
+          '设置关系底色'
       },
 
       {
@@ -3735,7 +4009,7 @@ const PORT =
 app.listen(PORT, () => {
 
   console.log(
-    'emotion mcp server running psychological-state-v1'
+    'emotion mcp server running psychological-state-v2-with-relationship-tools'
   )
 
 })
