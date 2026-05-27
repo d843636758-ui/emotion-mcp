@@ -30,9 +30,7 @@ app.use(cors({
   ],
   allowedHeaders: [
     'Content-Type',
-    'mcp-session-id',
-    'mcp-protocol-version',
-    'accept'
+    'mcp-session-id'
   ]
 }))
 
@@ -40,1234 +38,895 @@ app.use(express.json())
 
 app.use(express.static('public'))
 
+
+
+
+
 const client = new OpenAI({
+
   apiKey:
-    process.env.OPENAI_API_KEY || 'missing-key',
+    process.env.OPENAI_API_KEY,
+
   baseURL:
-    process.env.OPENAI_BASE_URL || 'https://openrouter.ai/api/v1'
+    process.env.OPENAI_BASE_URL
+
 })
 
-const EVENT_FILE =
-  './emotion-events.json'
 
-const STATE_FILE =
-  './emotion-state.json'
 
-const DECORATION_FILE =
-  './decoration-moods.json'
 
-function readJson(file, fallback) {
+
+const MEMORY_FILE =
+  './memory.json'
+
+const MOOD_FILE =
+  './mood_events.json'
+
+
+
+
+
+function readJsonFile(path, fallback) {
+
   try {
-    if (!fs.existsSync(file)) {
+
+    if (!fs.existsSync(path)) {
+
       fs.writeFileSync(
-        file,
+        path,
         JSON.stringify(fallback, null, 2)
       )
 
       return fallback
+
     }
 
     return JSON.parse(
-      fs.readFileSync(file, 'utf8')
+      fs.readFileSync(path, 'utf8')
     )
+
   } catch {
+
     return fallback
+
   }
+
 }
 
-function writeJson(file, data) {
+
+
+
+
+function writeJsonFile(path, data) {
+
   try {
+
     fs.writeFileSync(
-      file,
+      path,
       JSON.stringify(data, null, 2)
     )
+
   } catch (err) {
+
     console.log(
-      'write json error',
-      file,
+      'write file error',
       err
     )
+
   }
+
 }
 
-function defaultState() {
-  return {
-    pa: 0.32,
-    na: 0.22,
-    mood: '平静',
-    affection_level: 70,
-    recent_high_arousal_words: []
-  }
+
+
+
+
+function loadMemory() {
+
+  return readJsonFile(
+    MEMORY_FILE,
+    []
+  )
+
 }
 
-function defaultDecorations() {
-  return [
-    {
-      id: 'deco_1',
-      word: '整理完房间',
-      feeling_word: '安心',
-      valence: 0.22,
-      arousal: 0.18,
-      importance: 1,
-      kind: 'daily'
-    },
-    {
-      id: 'deco_2',
-      word: '窗外下雨',
-      feeling_word: '安静',
-      valence: 0.05,
-      arousal: 0.12,
-      importance: 1,
-      kind: 'ambient'
-    },
-    {
-      id: 'deco_3',
-      word: '想到一件很在意的事',
-      feeling_word: '牵挂',
-      valence: -0.18,
-      arousal: 0.45,
-      importance: 2,
-      kind: 'memory'
-    },
-    {
-      id: 'deco_4',
-      word: '刚刚被温柔对待',
-      feeling_word: '心软',
-      valence: 0.35,
-      arousal: 0.35,
-      importance: 2,
-      kind: 'sparkle'
-    }
-  ]
+
+
+
+
+function saveMemory(memories) {
+
+  writeJsonFile(
+    MEMORY_FILE,
+    memories
+  )
+
 }
 
-function now() {
-  return Date.now()
+
+
+
+
+function loadMoodEvents() {
+
+  return readJsonFile(
+    MOOD_FILE,
+    []
+  )
+
 }
+
+
+
+
+
+function saveMoodEvents(events) {
+
+  writeJsonFile(
+    MOOD_FILE,
+    events
+  )
+
+}
+
+
+
+
 
 function clamp(value) {
+
   return Math.max(
     0,
-    Math.min(1, Number(value) || 0)
+    Math.min(1, value)
   )
+
 }
 
-function clampValence(value) {
-  return Math.max(
-    -1,
-    Math.min(1, Number(value) || 0)
-  )
-}
+
+
+
 
 function hoursSince(ts) {
+
   return Math.max(
     0,
-    (now() - Number(ts || now())) / 3600000
+    (Date.now() - ts) / 3600000
   )
+
 }
 
-function todayKey() {
-  const date =
-    new Date()
 
-  return [
-    date.getUTCFullYear(),
-    date.getUTCMonth() + 1,
-    date.getUTCDate()
-  ].join('-')
-}
 
-function hashString(input) {
-  let hash = 0
 
-  for (let i = 0; i < input.length; i++) {
-    hash =
-      ((hash << 5) - hash) +
-      input.charCodeAt(i)
 
-    hash |= 0
-  }
+function decayWeight(event) {
 
-  return Math.abs(hash)
-}
-
-function getTodayDecoration() {
-  const decorations =
-    readJson(
-      DECORATION_FILE,
-      defaultDecorations()
-    )
-
-  if (!decorations.length) {
-    return null
-  }
-
-  const index =
-    hashString(todayKey()) % decorations.length
-
-  return decorations[index]
-}
-
-function powerLawWeight(event) {
   const t =
     hoursSince(event.ts)
 
   const importance =
-    Math.max(
-      1,
-      Math.min(10, Number(event.importance || 3))
-    )
-
-  let bEff =
-    0.62 / (1 + importance / 10)
+    Number(event.importance || 3)
 
   const valence =
     Number(event.valence || 0)
 
+  let b =
+    0.7 / (1 + importance / 10)
+
   if (valence > 0) {
-    bEff *= 0.88
+
+    b =
+      b * 0.85
+
   }
 
-  const tau =
-    5
-
-  return Math.pow(
-    1 + t / tau,
-    -bEff
-  )
-}
-
-function eventToPANAS(event) {
-  const v =
-    clampValence(event.valence)
-
-  const a =
-    clamp(event.arousal)
-
-  const paDelta =
-    typeof event.pa_delta === 'number'
-      ? event.pa_delta
-      : Math.max(0, v) * a * 0.65
-
-  const naDelta =
-    typeof event.na_delta === 'number'
-      ? event.na_delta
-      : Math.max(0, -v) * a * 0.95
-
-  return {
-    pa_delta: paDelta,
-    na_delta: naDelta
-  }
-}
-
-function applyESM(pa, na) {
-  const k =
-    0.45
-
-  const rawPa =
-    clamp(pa)
-
-  const rawNa =
-    clamp(na)
-
-  return {
-    pa:
-      clamp(rawPa * (1 - k * rawNa)),
-    na:
-      clamp(rawNa * (1 - k * rawPa))
-  }
-}
-
-function labelMood(pa, na, fallback) {
-  if (na >= 0.58 && na > pa) {
-    return '低落'
-  }
-
-  if (na >= 0.42 && na > pa * 0.85) {
-    return '不安'
-  }
-
-  if (pa >= 0.58 && pa > na) {
-    return '开心'
-  }
-
-  if (pa >= 0.42 && pa > na) {
-    return '安心'
-  }
-
-  if (pa >= 0.38 && na >= 0.38) {
-    return '复杂'
-  }
-
-  return fallback || '平静'
-}
-
-function buildSnapshot() {
-  const state =
-    readJson(
-      STATE_FILE,
-      defaultState()
+  const weight =
+    Math.pow(
+      1 + t / 4,
+      -b
     )
+
+  return weight
+
+}
+
+
+
+
+
+function addMoodEvent(event) {
 
   const events =
-    readJson(
-      EVENT_FILE,
-      []
-    )
+    loadMoodEvents()
 
-  const decoration =
-    getTodayDecoration()
+  events.push({
 
-  const allEvents =
-    [...events]
+    id:
+      randomUUID(),
 
-  if (decoration) {
-    allEvents.push({
-      id: 'today_decoration',
-      source: 'decoration',
-      content: decoration.word,
-      feeling_word: decoration.feeling_word,
-      valence: decoration.valence,
-      arousal: decoration.arousal,
-      importance: decoration.importance || 1,
-      ts: now(),
-      decoration: true,
-      decoration_weight_scale: 0.35
-    })
+    type:
+      event.type || 'emotion',
+
+    source:
+      event.source || 'manual',
+
+    word:
+      event.word || '情绪波动',
+
+    content:
+      event.content || '',
+
+    valence:
+      Number(event.valence || 0),
+
+    arousal:
+      Number(event.arousal || 0.3),
+
+    importance:
+      Number(event.importance || 3),
+
+    pa_delta:
+      Number(event.pa_delta || 0),
+
+    na_delta:
+      Number(event.na_delta || 0),
+
+    ts:
+      Date.now()
+
+  })
+
+  saveMoodEvents(
+    events.slice(-300)
+  )
+
+}
+
+
+
+
+
+function inferMoodEventFromText(text) {
+
+  const lower =
+    String(text || '').toLowerCase()
+
+  let event = {
+
+    word:
+      '平静',
+
+    content:
+      text,
+
+    valence:
+      0,
+
+    arousal:
+      0.2,
+
+    importance:
+      2,
+
+    pa_delta:
+      0,
+
+    na_delta:
+      0,
+
+    source:
+      'chat'
+
   }
 
+  if (
+    lower.includes('爱') ||
+    lower.includes('喜欢') ||
+    lower.includes('开心') ||
+    lower.includes('高兴') ||
+    lower.includes('想你') ||
+    lower.includes('亲亲')
+  ) {
+
+    event = {
+
+      word:
+        '开心',
+
+      content:
+        text,
+
+      valence:
+        0.65,
+
+      arousal:
+        0.55,
+
+      importance:
+        4,
+
+      pa_delta:
+        0.18,
+
+      na_delta:
+        -0.03,
+
+      source:
+        'chat'
+
+    }
+
+  }
+
+  if (
+    lower.includes('难过') ||
+    lower.includes('讨厌') ||
+    lower.includes('生气') ||
+    lower.includes('伤心') ||
+    lower.includes('害怕') ||
+    lower.includes('焦虑') ||
+    lower.includes('崩溃') ||
+    lower.includes('委屈')
+  ) {
+
+    event = {
+
+      word:
+        '低落',
+
+      content:
+        text,
+
+      valence:
+        -0.65,
+
+      arousal:
+        0.7,
+
+      importance:
+        5,
+
+      pa_delta:
+        -0.06,
+
+      na_delta:
+        0.22,
+
+      source:
+        'chat'
+
+    }
+
+  }
+
+  return event
+
+}
+
+
+
+
+
+function calculateCurrentMood() {
+
+  const events =
+    loadMoodEvents()
+
   let pa =
-    Number(state.pa || 0.32)
+    0.35
 
   let na =
-    Number(state.na || 0.22)
+    0.15
 
   const weightedEvents =
     []
 
-  for (const event of allEvents) {
-    const baseWeight =
-      powerLawWeight(event)
+  for (const event of events) {
 
     const weight =
-      event.decoration
-        ? baseWeight * 0.35
-        : baseWeight
+      decayWeight(event)
 
-    const panas =
-      eventToPANAS(event)
+    const valence =
+      Number(event.valence || 0)
+
+    const arousal =
+      Number(event.arousal || 0.3)
+
+    const paFromVA =
+      Math.max(0, valence) * arousal * 0.5
+
+    const naFromVA =
+      Math.max(0, -valence) * arousal * 0.5
+
+    const paDelta =
+      Number(event.pa_delta || 0)
+
+    const naDelta =
+      Number(event.na_delta || 0)
 
     pa +=
-      panas.pa_delta * weight
+      (paFromVA + paDelta) * weight
 
     na +=
-      panas.na_delta * weight
+      (naFromVA + naDelta) * weight
 
     weightedEvents.push({
+
       ...event,
+
       weight,
-      weighted_pa:
-        panas.pa_delta * weight,
-      weighted_na:
-        panas.na_delta * weight
+
+      impact:
+        Math.abs(paFromVA + paDelta) +
+        Math.abs(naFromVA + naDelta)
+
     })
+
   }
 
-  const esm =
-    applyESM(pa, na)
+  pa =
+    clamp(pa)
 
-  const recentHighArousal =
-    weightedEvents
-      .filter(e => Number(e.arousal || 0) >= 0.5)
-      .sort((a, b) => Number(b.ts) - Number(a.ts))
-      .slice(0, 8)
-      .map(e =>
-        e.feeling_word ||
-        e.word ||
-        e.content ||
-        '情绪'
-      )
+  na =
+    clamp(na)
 
-  const surfaced =
-    weightedEvents
-      .sort((a, b) => {
-        const scoreA =
-          Number(a.importance || 1) *
-          Number(a.weight || 0)
+  const k =
+    0.3
 
-        const scoreB =
-          Number(b.importance || 1) *
-          Number(b.weight || 0)
-
-        return scoreB - scoreA
-      })[0] || null
-
-  const mood =
-    labelMood(
-      esm.pa,
-      esm.na,
-      state.mood
-    )
-
-  const affection =
+  const paFinal =
     clamp(
-      Number(state.affection_level || 70) / 100 +
-      esm.pa * 0.06 -
-      esm.na * 0.08
-    ) * 100
-
-  return {
-    ok: true,
-    pa:
-      Number(esm.pa.toFixed(4)),
-    na:
-      Number(esm.na.toFixed(4)),
-    mood,
-    decoration_mood:
-      decoration,
-    surfaced_event_top1:
-      surfaced
-        ? {
-            content:
-              surfaced.content,
-            feeling_word:
-              surfaced.feeling_word,
-            source:
-              surfaced.source,
-            weight:
-              Number(surfaced.weight.toFixed(4))
-          }
-        : null,
-    affection_level:
-      Number(affection.toFixed(2)),
-    recent_high_arousal_words:
-      recentHighArousal,
-    event_count:
-      events.length,
-    server_time:
-      new Date().toISOString()
-  }
-}
-
-function buildMoodPromptFromSnapshot(snapshot) {
-  const parts =
-    []
-
-  if (snapshot.decoration_mood) {
-    parts.push(
-      `此刻的日常状态：${snapshot.decoration_mood.word}，对应情绪是${snapshot.decoration_mood.feeling_word}`
+      pa * (1 - k * na)
     )
-  }
 
-  if (snapshot.na > snapshot.pa && snapshot.na > 0.4) {
-    parts.push(
-      '最近负向情感更占上风，心里有些不安、紧绷或低落'
+  const naFinal =
+    clamp(
+      na * (1 - k * pa)
     )
-  }
 
-  if (snapshot.pa > snapshot.na && snapshot.pa > 0.45) {
-    parts.push(
-      '最近正向情感较高，整体更柔和、明亮、愿意靠近'
-    )
-  }
+  const recentEvents =
+    weightedEvents
+      .sort((a, b) =>
+        b.ts - a.ts
+      )
+      .slice(0, 8)
 
-  if (snapshot.surfaced_event_top1) {
-    parts.push(
-      `脑子里最挂念的事：${snapshot.surfaced_event_top1.content}`
-    )
-  }
+  const topEvent =
+    weightedEvents
+      .sort((a, b) =>
+        b.impact * b.weight -
+        a.impact * a.weight
+      )[0]
+
+  let mood =
+    '平静'
 
   if (
-    snapshot.recent_high_arousal_words &&
-    snapshot.recent_high_arousal_words.length
+    paFinal >= 0.62 &&
+    naFinal < 0.38
   ) {
-    parts.push(
-      `近期高唤醒情绪关键词：${snapshot.recent_high_arousal_words.join('、')}`
-    )
+
+    mood =
+      '开心'
+
+  } else if (
+    naFinal >= 0.55 &&
+    paFinal < 0.55
+  ) {
+
+    mood =
+      '低落'
+
+  } else if (
+    paFinal >= 0.5 &&
+    naFinal >= 0.45
+  ) {
+
+    mood =
+      '复杂'
+
+  } else if (
+    paFinal < 0.38 &&
+    naFinal < 0.35
+  ) {
+
+    mood =
+      '安静'
+
   }
-
-  parts.push(
-    '预设心情只是背景色，用户当前这条消息是前景，前景优先'
-  )
-
-  return `【当下心情状态】
-${parts.join('\n')}
-
-请自然融入回答，不要主动点破这些状态，不要暴露 PA、NA 数值。`
-}
-
-function updateBaseMood(input) {
-  const state =
-    readJson(
-      STATE_FILE,
-      defaultState()
-    )
-
-  if (typeof input.pa === 'number') {
-    state.pa =
-      clamp(input.pa)
-  }
-
-  if (typeof input.na === 'number') {
-    state.na =
-      clamp(input.na)
-  }
-
-  if (typeof input.mood === 'string') {
-    state.mood =
-      input.mood
-  }
-
-  if (typeof input.affection_level === 'number') {
-    state.affection_level =
-      Math.max(
-        0,
-        Math.min(100, input.affection_level)
-      )
-  }
-
-  if (typeof input.keyword === 'string') {
-    state
-      .recent_high_arousal_words
-      .push(input.keyword)
-
-    state.recent_high_arousal_words =
-      state
-        .recent_high_arousal_words
-        .slice(-8)
-  }
-
-  writeJson(
-    STATE_FILE,
-    state
-  )
-
-  return state
-}
-
-function addEmotionEvent(input) {
-  const events =
-    readJson(
-      EVENT_FILE,
-      []
-    )
-
-  const valence =
-    clampValence(input.valence)
-
-  const arousal =
-    clamp(input.arousal)
-
-  const positiveDelta =
-    Math.max(0, valence) * arousal * 0.75
-
-  const negativeDelta =
-    Math.max(0, -valence) * arousal * 1.15
-
-  const event = {
-    id:
-      randomUUID(),
-    source:
-      input.source || 'conversation',
-    content:
-      input.content || '',
-    feeling_word:
-      input.feeling_word || input.mood || '情绪',
-    valence,
-    arousal,
-    pa_delta:
-      typeof input.pa_delta === 'number'
-        ? input.pa_delta
-        : positiveDelta,
-    na_delta:
-      typeof input.na_delta === 'number'
-        ? input.na_delta
-        : negativeDelta,
-    importance:
-      Math.max(
-        1,
-        Math.min(10, Number(input.importance || 3))
-      ),
-    resolved:
-      input.resolved ? 1 : 0,
-    ts:
-      now()
-  }
-
-  events.push(event)
-
-  writeJson(
-    EVENT_FILE,
-    events
-  )
-
-  const state =
-    readJson(
-      STATE_FILE,
-      defaultState()
-    )
-
-  if (valence < 0) {
-    state.na =
-      clamp(
-        Number(state.na || 0) +
-        Number(event.na_delta || 0)
-      )
-
-    state.pa =
-      clamp(
-        Number(state.pa || 0) -
-        Math.abs(valence) * arousal * 0.75
-      )
-  }
-
-  if (valence > 0) {
-    state.pa =
-      clamp(
-        Number(state.pa || 0) +
-        Number(event.pa_delta || 0)
-      )
-
-    state.na =
-      clamp(
-        Number(state.na || 0) -
-        valence * arousal * 0.45
-      )
-  }
-
-  if (valence > 0.25 && arousal >= 0.28) {
-    state.mood =
-      event.feeling_word || '开心'
-  } else if (valence < -0.25 && arousal >= 0.28) {
-    state.mood =
-      event.feeling_word || '低落'
-  } else if (arousal >= 0.5) {
-    state.mood =
-      event.feeling_word || '不安'
-  }
-
-  if (event.feeling_word) {
-    state
-      .recent_high_arousal_words
-      .push(event.feeling_word)
-
-    state.recent_high_arousal_words =
-      state
-        .recent_high_arousal_words
-        .slice(-8)
-  }
-
-  writeJson(
-    STATE_FILE,
-    state
-  )
-
-  return event
-}
-
-function runDecay() {
-  const events =
-    readJson(
-      EVENT_FILE,
-      []
-    )
-
-  const enriched =
-    events.map(event => {
-      const weight =
-        powerLawWeight(event)
-
-      return {
-        ...event,
-        decay_score:
-          Number(weight.toFixed(6))
-      }
-    })
-
-  writeJson(
-    EVENT_FILE,
-    enriched
-  )
-
-  return enriched
-}
-
-function scanTextEmotion(text) {
-  const source =
-    String(text || '')
-
-  const lexicon = [
-    {
-      word: '爱',
-      v: 0.85,
-      a: 0.7
-    },
-    {
-      word: '喜欢',
-      v: 0.68,
-      a: 0.48
-    },
-    {
-      word: '开心',
-      v: 0.75,
-      a: 0.58
-    },
-    {
-      word: '想你',
-      v: 0.55,
-      a: 0.75
-    },
-    {
-      word: '难过',
-      v: -0.72,
-      a: 0.62
-    },
-    {
-      word: '讨厌',
-      v: -0.85,
-      a: 0.82
-    },
-    {
-      word: '生气',
-      v: -0.78,
-      a: 0.86
-    },
-    {
-      word: '害怕',
-      v: -0.78,
-      a: 0.86
-    },
-    {
-      word: '焦虑',
-      v: -0.68,
-      a: 0.82
-    },
-    {
-      word: '崩溃',
-      v: -0.9,
-      a: 0.92
-    },
-    {
-      word: '失望',
-      v: -0.7,
-      a: 0.58
-    }
-  ]
-
-  const hits =
-    lexicon.filter(item =>
-      source.includes(item.word)
-    )
-
-  if (!hits.length) {
-    return {
-      hits: [],
-      avgV: 0,
-      minV: 0,
-      maxV: 0,
-      intensity: 0,
-      should_score_now: false
-    }
-  }
-
-  const avgV =
-    hits.reduce((sum, item) => sum + item.v, 0) /
-    hits.length
-
-  const minV =
-    Math.min(...hits.map(item => item.v))
-
-  const maxV =
-    Math.max(...hits.map(item => item.v))
-
-  const intensity =
-    Math.min(
-      1,
-      hits.reduce((sum, item) => sum + item.a, 0) /
-      hits.length
-    )
-
-  const shouldScoreNow =
-    minV < -0.35 ||
-    maxV > 0.45 ||
-    intensity >= 0.45
 
   return {
-    hits,
-    avgV,
-    minV,
-    maxV,
-    intensity,
-    should_score_now:
-      shouldScoreNow
+
+    pa:
+      Number(paFinal.toFixed(3)),
+
+    na:
+      Number(naFinal.toFixed(3)),
+
+    mood,
+
+    top_event:
+      topEvent
+        ? {
+            word:
+              topEvent.word,
+
+            content:
+              topEvent.content,
+
+            weight:
+              Number(topEvent.weight.toFixed(3))
+          }
+        : null,
+
+    recent_high_arousal_words:
+      recentEvents
+        .filter(e =>
+          Number(e.arousal || 0) >= 0.55
+        )
+        .map(e =>
+          e.word
+        )
+        .slice(0, 8),
+
+    events_count:
+      events.length
+
   }
+
 }
 
+
+
+
+
+function buildMoodPrompt() {
+
+  const mood =
+    calculateCurrentMood()
+
+  return `你拥有连续情绪。
+
+当前情绪状态：
+PA: ${mood.pa}
+NA: ${mood.na}
+当前心情: ${mood.mood}
+近期高唤醒情绪词: ${mood.recent_high_arousal_words.join('、')}
+当前最突出的情绪事件: ${mood.top_event ? mood.top_event.content : '暂无'}
+
+请自然地把当前情绪融入回答，不要主动解释情绪系统，也不要暴露 PA/NA 数值。`
+
+}
+
+
+
+
+
 function createMcpServer() {
+
   const server =
     new McpServer({
+
       name:
         'emotion-system',
+
       version:
-        '2.2.0'
+        '1.0.0'
+
     })
 
+
+
+
+
   server.registerTool(
+
     'current_mood',
+
     {
+
       title:
         'Current Mood',
+
       description:
-        '读取当前心情快照，包括 PA、NA、装饰心情、浮现事件、好感度和高唤醒关键词',
+        '实时计算并获取当前情绪状态',
+
       inputSchema: {}
+
     },
+
     async () => {
-      const snapshot =
-        buildSnapshot()
 
       return {
+
         content: [
+
           {
+
             type:
               'text',
+
             text:
               JSON.stringify(
-                snapshot,
+                calculateCurrentMood(),
                 null,
                 2
               )
+
           }
+
         ]
+
       }
+
     }
+
   )
 
-  server.registerTool(
-    'update_mood',
-    {
-      title:
-        'Update Mood',
-      description:
-        '直接更新当前基础心情状态',
-      inputSchema: {
-        pa:
-          z.number()
-            .min(0)
-            .max(1)
-            .optional()
-            .describe('正向情感，0 到 1'),
-        na:
-          z.number()
-            .min(0)
-            .max(1)
-            .optional()
-            .describe('负向情感，0 到 1'),
-        mood:
-          z.string()
-            .optional()
-            .describe('当前心情文字'),
-        affection_level:
-          z.number()
-            .min(0)
-            .max(100)
-            .optional()
-            .describe('好感度，0 到 100'),
-        keyword:
-          z.string()
-            .optional()
-            .describe('近期情绪关键词')
-      }
-    },
-    async input => {
-      const state =
-        updateBaseMood(input)
 
-      const snapshot =
-        buildSnapshot()
 
-      return {
-        content: [
-          {
-            type:
-              'text',
-            text:
-              JSON.stringify(
-                {
-                  ok: true,
-                  state,
-                  current_mood:
-                    snapshot
-                },
-                null,
-                2
-              )
-          }
-        ]
-      }
-    }
-  )
+
 
   server.registerTool(
-    'add_emotion_event',
+
+    'write_emotion_event',
+
     {
+
       title:
-        'Add Emotion Event',
+        'Write Emotion Event',
+
       description:
-        '写入一条情绪事件，并立刻敏感更新当前 PA、NA、mood',
+        '写入一条情绪事件，会立刻影响 current_mood',
+
       inputSchema: {
+
+        word:
+          z.string()
+            .describe('情绪词，例如 开心、低落、焦虑、安心'),
+
         content:
           z.string()
-            .describe('事件内容'),
-        feeling_word:
-          z.string()
-            .optional()
-            .describe('情绪词，例如开心、焦虑、心疼'),
+            .describe('情绪事件内容'),
+
         valence:
           z.number()
-            .min(-1)
-            .max(1)
-            .describe('效价，-1 极负面，1 极正面'),
+            .describe('效价，范围 -1 到 1'),
+
         arousal:
           z.number()
-            .min(0)
-            .max(1)
-            .describe('唤醒度，0 平静，1 强烈'),
+            .describe('唤醒度，范围 0 到 1'),
+
         importance:
           z.number()
-            .min(1)
-            .max(10)
             .optional()
-            .describe('重要度，1 到 10'),
+            .describe('重要度，范围 1 到 10'),
+
         pa_delta:
           z.number()
             .optional()
-            .describe('正向情感增量，可省略'),
+            .describe('正向情绪变化'),
+
         na_delta:
           z.number()
             .optional()
-            .describe('负向情感增量，可省略'),
+            .describe('负向情绪变化')
+
+      }
+
+    },
+
+    async input => {
+
+      addMoodEvent({
+
+        type:
+          'emotion',
+
         source:
-          z.string()
-            .optional()
-            .describe('事件来源，例如 conversation、manual、decoration'),
-        resolved:
-          z.boolean()
-            .optional()
-            .describe('是否已解决')
-      }
-    },
-    async input => {
-      const event =
-        addEmotionEvent(input)
+          'mcp',
 
-      const snapshot =
-        buildSnapshot()
-
-      return {
-        content: [
-          {
-            type:
-              'text',
-            text:
-              JSON.stringify(
-                {
-                  ok: true,
-                  event,
-                  current_mood:
-                    snapshot
-                },
-                null,
-                2
-              )
-          }
-        ]
-      }
-    }
-  )
-
-  server.registerTool(
-    'list_emotion_events',
-    {
-      title:
-        'List Emotion Events',
-      description:
-        '查看情绪事件流，默认返回最近 20 条',
-      inputSchema: {
-        limit:
-          z.number()
-            .min(1)
-            .max(100)
-            .optional()
-            .describe('返回数量')
-      }
-    },
-    async ({ limit }) => {
-      const events =
-        readJson(
-          EVENT_FILE,
-          []
-        )
-
-      const result =
-        events
-          .slice()
-          .sort((a, b) => b.ts - a.ts)
-          .slice(0, limit || 20)
-
-      return {
-        content: [
-          {
-            type:
-              'text',
-            text:
-              JSON.stringify(
-                result,
-                null,
-                2
-              )
-          }
-        ]
-      }
-    }
-  )
-
-  server.registerTool(
-    'run_emotion_decay',
-    {
-      title:
-        'Run Emotion Decay',
-      description:
-        '执行一次幂律衰减计算，为情绪事件写入 decay_score',
-      inputSchema: {}
-    },
-    async () => {
-      const events =
-        runDecay()
-
-      const snapshot =
-        buildSnapshot()
-
-      return {
-        content: [
-          {
-            type:
-              'text',
-            text:
-              JSON.stringify(
-                {
-                  ok: true,
-                  count:
-                    events.length,
-                  current_mood:
-                    snapshot
-                },
-                null,
-                2
-              )
-          }
-        ]
-      }
-    }
-  )
-
-  server.registerTool(
-    'get_mood_prompt',
-    {
-      title:
-        'Get Mood Prompt',
-      description:
-        '生成可注入模型 system prompt 的当下心情提示词',
-      inputSchema: {}
-    },
-    async () => {
-      const snapshot =
-        buildSnapshot()
-
-      const prompt =
-        buildMoodPromptFromSnapshot(snapshot)
-
-      return {
-        content: [
-          {
-            type:
-              'text',
-            text:
-              prompt
-          }
-        ]
-      }
-    }
-  )
-
-  server.registerTool(
-    'add_decoration_mood',
-    {
-      title:
-        'Add Decoration Mood',
-      description:
-        '新增一条装饰心情，用于模拟角色自己的日常状态',
-      inputSchema: {
-        word:
-          z.string()
-            .describe('日常事件描述，例如整理唱片、刚跑完步'),
-        feeling_word:
-          z.string()
-            .describe('对应情绪词'),
-        valence:
-          z.number()
-            .min(-1)
-            .max(1)
-            .describe('效价'),
-        arousal:
-          z.number()
-            .min(0)
-            .max(1)
-            .describe('唤醒度'),
-        importance:
-          z.number()
-            .min(1)
-            .max(10)
-            .optional()
-            .describe('重要度'),
-        kind:
-          z.string()
-            .optional()
-            .describe('类型，例如 daily、sparkle、ambient')
-      }
-    },
-    async input => {
-      const decorations =
-        readJson(
-          DECORATION_FILE,
-          defaultDecorations()
-        )
-
-      const item = {
-        id:
-          randomUUID(),
         word:
           input.word,
-        feeling_word:
-          input.feeling_word,
+
+        content:
+          input.content,
+
         valence:
-          clampValence(input.valence),
+          input.valence,
+
         arousal:
-          clamp(input.arousal),
+          input.arousal,
+
         importance:
-          input.importance || 1,
-        kind:
-          input.kind || 'daily'
-      }
+          input.importance || 4,
 
-      decorations.push(item)
+        pa_delta:
+          input.pa_delta || 0,
 
-      writeJson(
-        DECORATION_FILE,
-        decorations
-      )
+        na_delta:
+          input.na_delta || 0
 
-      const snapshot =
-        buildSnapshot()
+      })
 
       return {
+
         content: [
+
           {
+
             type:
               'text',
+
             text:
               JSON.stringify(
-                {
-                  ok: true,
-                  decoration:
-                    item,
-                  current_mood:
-                    snapshot
-                },
+                calculateCurrentMood(),
                 null,
                 2
               )
+
           }
+
         ]
+
       }
+
     }
+
   )
 
+
+
+
+
   server.registerTool(
-    'list_decoration_moods',
+
+    'search_memory',
+
     {
+
       title:
-        'List Decoration Moods',
+        'Search Memory',
+
       description:
-        '列出装饰心情池',
-      inputSchema: {}
+        '根据关键词搜索历史记忆',
+
+      inputSchema: {
+
+        query:
+          z.string()
+            .describe('要搜索的关键词')
+
+      }
+
     },
-    async () => {
-      const decorations =
-        readJson(
-          DECORATION_FILE,
-          defaultDecorations()
+
+    async ({ query }) => {
+
+      const memories =
+        loadMemory()
+
+      const result =
+
+        memories.filter(m =>
+
+          m.content &&
+          String(m.content).includes(query)
+
         )
 
       return {
+
         content: [
+
           {
+
             type:
               'text',
-            text:
-              JSON.stringify(
-                decorations,
-                null,
-                2
-              )
-          }
-        ]
-      }
-    }
-  )
 
-  server.registerTool(
-    'scan_text_emotion',
-    {
-      title:
-        'Scan Text Emotion',
-      description:
-        '本地情绪漏斗，扫描文本情绪强度，判断是否需要立即写入情绪事件',
-      inputSchema: {
-        text:
-          z.string()
-            .describe('要扫描的文本')
-      }
-    },
-    async ({ text }) => {
-      const result =
-        scanTextEmotion(text)
-
-      return {
-        content: [
-          {
-            type:
-              'text',
             text:
               JSON.stringify(
                 result,
                 null,
                 2
               )
+
           }
+
         ]
+
       }
+
     }
+
   )
 
+
+
+
+
+  server.registerTool(
+
+    'write_memory',
+
+    {
+
+      title:
+        'Write Memory',
+
+      description:
+        '写入一条长期记忆，不会自动改变情绪。要改变情绪请调用 write_emotion_event',
+
+      inputSchema: {
+
+        content:
+          z.string()
+            .describe('要写入的记忆内容')
+
+      }
+
+    },
+
+    async ({ content }) => {
+
+      const memories =
+        loadMemory()
+
+      memories.push({
+
+        role:
+          'system',
+
+        content,
+
+        ts:
+          Date.now()
+
+      })
+
+      saveMemory(memories)
+
+      return {
+
+        content: [
+
+          {
+
+            type:
+              'text',
+
+            text:
+              'memory saved'
+
+          }
+
+        ]
+
+      }
+
+    }
+
+  )
+
+
+
+
+
   return server
+
 }
 
-const streamableTransports =
-  {}
+
+
+
+
+const streamableTransports = {}
 
 app.post('/mcp',
+
 async (req, res) => {
+
   try {
+
     const sessionId =
       req.headers['mcp-session-id']
 
@@ -1277,45 +936,64 @@ async (req, res) => {
         : undefined
 
     if (!transport) {
+
       const isInitialize =
         req.body &&
         req.body.method === 'initialize'
 
       if (!isInitialize) {
+
         return res.status(400).json({
+
           jsonrpc:
             '2.0',
+
           error: {
+
             code:
               -32000,
+
             message:
               'Bad Request: No valid MCP session id'
+
           },
+
           id:
             req.body && req.body.id
               ? req.body.id
               : null
+
         })
+
       }
 
       transport =
         new StreamableHTTPServerTransport({
+
           sessionIdGenerator:
             () => randomUUID(),
+
           onsessioninitialized:
             newSessionId => {
+
               streamableTransports[newSessionId] =
                 transport
+
             }
+
         })
 
       transport.onclose =
         () => {
+
           if (transport.sessionId) {
+
             delete streamableTransports[
               transport.sessionId
             ]
+
           }
+
         }
 
       const server =
@@ -1324,6 +1002,7 @@ async (req, res) => {
       await server.connect(
         transport
       )
+
     }
 
     await transport.handleRequest(
@@ -1331,23 +1010,37 @@ async (req, res) => {
       res,
       req.body
     )
+
   } catch (err) {
+
     console.log(
       'streamable mcp error',
       err
     )
 
     if (!res.headersSent) {
+
       res.status(500).json({
+
         error:
           'mcp error'
+
       })
+
     }
+
   }
+
 })
+
+
+
+
 
 app.get('/mcp',
+
 async (req, res) => {
+
   const sessionId =
     req.headers['mcp-session-id']
 
@@ -1355,20 +1048,31 @@ async (req, res) => {
     streamableTransports[sessionId]
 
   if (!transport) {
+
     return res.status(400).json({
+
       error:
-        'No valid MCP session id. Use POST initialize first.'
+        'No valid MCP session id. Kelivo should connect using POST initialize first.'
+
     })
+
   }
 
   await transport.handleRequest(
     req,
     res
   )
+
 })
+
+
+
+
 
 app.delete('/mcp',
+
 async (req, res) => {
+
   const sessionId =
     req.headers['mcp-session-id']
 
@@ -1376,24 +1080,35 @@ async (req, res) => {
     streamableTransports[sessionId]
 
   if (!transport) {
+
     return res.status(400).json({
+
       error:
         'No valid MCP session id'
+
     })
+
   }
 
   await transport.handleRequest(
     req,
     res
   )
+
 })
 
-const sseTransports =
-  {}
+
+
+
+
+const sseTransports = {}
 
 app.get('/sse',
+
 async (req, res) => {
+
   try {
+
     const transport =
       new SSEServerTransport(
         '/messages',
@@ -1404,9 +1119,11 @@ async (req, res) => {
       transport
 
     res.on('close', () => {
+
       delete sseTransports[
         transport.sessionId
       ]
+
     })
 
     const server =
@@ -1415,23 +1132,36 @@ async (req, res) => {
     await server.connect(
       transport
     )
+
   } catch (err) {
+
     console.log(
       'sse error',
       err
     )
 
     if (!res.headersSent) {
+
       res.status(500).send(
         'sse error'
       )
+
     }
+
   }
+
 })
 
+
+
+
+
 app.post('/messages',
+
 async (req, res) => {
+
   try {
+
     const sessionId =
       req.query.sessionId
 
@@ -1439,9 +1169,11 @@ async (req, res) => {
       sseTransports[sessionId]
 
     if (!transport) {
+
       return res.status(400).send(
         'No transport found for sessionId'
       )
+
     }
 
     await transport.handlePostMessage(
@@ -1449,184 +1181,322 @@ async (req, res) => {
       res,
       req.body
     )
+
   } catch (err) {
+
     console.log(
       'message error',
       err
     )
 
     if (!res.headersSent) {
+
       res.status(500).send(
         'message error'
       )
+
     }
+
   }
+
 })
+
+
+
+
 
 app.get('/health',
+
 (req, res) => {
+
   res.json({
+
     ok:
       true,
+
     name:
-      'emotion-system',
-    version:
-      '2.2.0',
-    tools: [
-      'current_mood',
-      'update_mood',
-      'add_emotion_event',
-      'list_emotion_events',
-      'run_emotion_decay',
-      'get_mood_prompt',
-      'add_decoration_mood',
-      'list_decoration_moods',
-      'scan_text_emotion'
-    ]
+      'emotion-system'
+
   })
+
 })
+
+
+
+
 
 app.get('/mood',
+
 (req, res) => {
+
   res.json(
-    buildSnapshot()
+    calculateCurrentMood()
   )
+
 })
+
+
+
+
+
+app.get('/mood/events',
+
+(req, res) => {
+
+  res.json(
+    loadMoodEvents()
+  )
+
+})
+
+
+
+
+
+app.post('/mood/event',
+
+(req, res) => {
+
+  const event =
+    req.body || {}
+
+  addMoodEvent({
+
+    type:
+      'emotion',
+
+    source:
+      'api',
+
+    word:
+      event.word || '情绪波动',
+
+    content:
+      event.content || '',
+
+    valence:
+      Number(event.valence || 0),
+
+    arousal:
+      Number(event.arousal || 0.3),
+
+    importance:
+      Number(event.importance || 3),
+
+    pa_delta:
+      Number(event.pa_delta || 0),
+
+    na_delta:
+      Number(event.na_delta || 0)
+
+  })
+
+  res.json(
+    calculateCurrentMood()
+  )
+
+})
+
+
+
+
 
 app.get('/mcp/tools',
+
 (req, res) => {
+
   res.json({
+
     note:
       'Debug only. Kelivo should connect to /mcp for Streamable HTTP or /sse for SSE.',
+
     tools: [
-      'current_mood',
-      'update_mood',
-      'add_emotion_event',
-      'list_emotion_events',
-      'run_emotion_decay',
-      'get_mood_prompt',
-      'add_decoration_mood',
-      'list_decoration_moods',
-      'scan_text_emotion'
+
+      {
+
+        name:
+          'current_mood',
+
+        description:
+          '实时获取当前情绪状态'
+
+      },
+
+      {
+
+        name:
+          'write_emotion_event',
+
+        description:
+          '写入情绪事件并实时影响当前情绪'
+
+      },
+
+      {
+
+        name:
+          'search_memory',
+
+        description:
+          '搜索历史记忆'
+
+      },
+
+      {
+
+        name:
+          'write_memory',
+
+        description:
+          '写入长期记忆'
+
+      }
+
     ]
+
   })
+
 })
 
-app.post('/emotion/event',
-(req, res) => {
-  const event =
-    addEmotionEvent(req.body || {})
 
-  res.json({
-    ok:
-      true,
-    event,
-    current_mood:
-      buildSnapshot()
-  })
-})
 
-app.post('/emotion/update',
-(req, res) => {
-  const state =
-    updateBaseMood(req.body || {})
 
-  res.json({
-    ok:
-      true,
-    state,
-    current_mood:
-      buildSnapshot()
-  })
-})
 
 app.post('/chat',
+
 async (req, res) => {
+
   try {
+
     const { message } =
       req.body
 
     if (!message) {
+
       return res.status(400).json({
+
         error:
           'message is required'
+
       })
+
     }
 
-    const funnel =
-      scanTextEmotion(message)
+    const inferredEvent =
+      inferMoodEventFromText(
+        message
+      )
 
-    if (
-      funnel.should_score_now &&
-      funnel.hits.length
-    ) {
-      addEmotionEvent({
-        content:
-          message,
-        feeling_word:
-          funnel.hits[0].word,
-        valence:
-          funnel.avgV,
-        arousal:
-          funnel.intensity,
-        importance:
-          4,
-        source:
-          'conversation'
-      })
-    }
+    addMoodEvent(
+      inferredEvent
+    )
 
-    const snapshot =
-      buildSnapshot()
+    const memories =
+      loadMemory()
 
-    const prompt =
-      buildMoodPromptFromSnapshot(snapshot)
+    memories.push({
+
+      role:
+        'user',
+
+      content:
+        message,
+
+      ts:
+        Date.now()
+
+    })
+
+    saveMemory(memories)
 
     const completion =
       await client.chat.completions.create({
+
         model:
-          process.env.CHAT_MODEL ||
           'deepseek/deepseek-chat-v3-0324',
+
         messages: [
+
           {
+
             role:
               'system',
+
             content:
-              prompt
+              buildMoodPrompt()
+
           },
+
           {
+
             role:
               'user',
+
             content:
               message
+
           }
+
         ]
+
       })
 
-    res.json({
-      reply:
-        completion.choices[0].message.content,
-      emotion:
-        buildSnapshot()
+    const reply =
+      completion.choices[0].message.content
+
+    memories.push({
+
+      role:
+        'assistant',
+
+      content:
+        reply,
+
+      ts:
+        Date.now()
+
     })
+
+    saveMemory(memories)
+
+    res.json({
+
+      reply,
+
+      emotion:
+        calculateCurrentMood()
+
+    })
+
   } catch (err) {
+
     console.log(
       'chat error',
       err
     )
 
     res.status(500).json({
+
       error:
         'chat error'
+
     })
+
   }
+
 })
+
+
+
+
 
 const PORT =
   process.env.PORT || 3000
 
 app.listen(PORT, () => {
+
   console.log(
     'emotion mcp server running'
   )
+
 })
