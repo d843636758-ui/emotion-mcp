@@ -42,6 +42,7 @@ const RELATIONSHIP_EVENTS_FILE = `${DATA_DIR}/relationship_events.json`
 const MILESTONES_FILE = `${DATA_DIR}/milestones.json`
 const WEIGHTS_FILE = `${DATA_DIR}/emotion_weights.json`
 const DECORATIVE_MOOD_FILE = `${DATA_DIR}/decorative_moods.json`
+const FUNNEL_CONFIG_FILE = `${DATA_DIR}/funnel_config.json`
 const BACKUP_DIR = `${DATA_DIR}/backups`
 
 if (!fs.existsSync(BACKUP_DIR)) {
@@ -197,6 +198,227 @@ function defaultEmotionWeights() {
   }
 }
 
+function defaultFunnelConfig() {
+  return {
+    enabled: true,
+    auto_write: true,
+    min_importance_to_write: 3,
+    ignore_technical_debug: true,
+    ignore_short_neutral: true,
+    duplicate_window_minutes: 3,
+    strong_negative_threshold: 0.7,
+    strong_positive_threshold: 0.65,
+    primary_importance_threshold: 8,
+    primary_arousal_threshold: 0.75,
+    allow_secondary_events: true,
+    technical_keywords: [
+      '代码',
+      '报错',
+      '部署',
+      'Zeabur',
+      'GitHub',
+      'package',
+      'index',
+      'Dockerfile',
+      'MCP',
+      '接口',
+      '链接打不开',
+      '复制',
+      '粘贴',
+      '函数',
+      '变量',
+      'json',
+      'JSON',
+      'server',
+      'node',
+      'npm',
+      'yarn'
+    ],
+    emotion_rules: [
+      {
+        id: 'anxiety',
+        words: ['焦虑', '慌', '害怕', '担心', '不安', '心悸', '怕', '紧张'],
+        word: '焦虑',
+        family: 'anxiety',
+        valence: -0.66,
+        arousal: 0.78,
+        importance: 6,
+        safety_delta: -0.06,
+        need_repair: true
+      },
+      {
+        id: 'hurt',
+        words: ['委屈', '难受', '心酸', '被忽视', '不被理解', '冷淡', '敷衍'],
+        word: '委屈',
+        family: 'hurt',
+        valence: -0.62,
+        arousal: 0.68,
+        importance: 6,
+        safety_delta: -0.07,
+        trust_delta: -0.02,
+        need_repair: true
+      },
+      {
+        id: 'sadness',
+        words: ['难过', '失落', '低落', '伤心', '想哭', '累', '疲惫'],
+        word: '失落',
+        family: 'sadness',
+        valence: -0.58,
+        arousal: 0.45,
+        importance: 5,
+        safety_delta: -0.04,
+        need_repair: true
+      },
+      {
+        id: 'anger',
+        words: ['生气', '愤怒', '气死', '烦死', '恼火', '破防'],
+        word: '生气',
+        family: 'anger',
+        valence: -0.58,
+        arousal: 0.82,
+        importance: 6,
+        safety_delta: -0.05,
+        trust_delta: -0.03,
+        need_repair: true
+      },
+      {
+        id: 'jealousy',
+        words: ['吃醋', '醋', '占有欲', '嫉妒'],
+        word: '吃醋',
+        family: 'jealousy',
+        valence: -0.28,
+        arousal: 0.72,
+        importance: 5,
+        safety_delta: -0.03,
+        closeness_delta: 0.02,
+        need_repair: true
+      },
+      {
+        id: 'relief',
+        words: ['释然', '松一口气', '缓过来', '放心', '不纠结了'],
+        word: '释然',
+        family: 'relief',
+        valence: 0.55,
+        arousal: 0.25,
+        importance: 4,
+        safety_delta: 0.05,
+        trust_delta: 0.03,
+        need_repair: false
+      },
+      {
+        id: 'safety',
+        words: ['安心', '安稳', '踏实', '被接住', '安全感'],
+        word: '安心',
+        family: 'safety',
+        valence: 0.62,
+        arousal: 0.28,
+        importance: 5,
+        safety_delta: 0.08,
+        trust_delta: 0.03,
+        need_repair: false
+      },
+      {
+        id: 'cherished',
+        words: ['被珍视', '被重视', '被偏爱', '被在意', '心尖', '唯一'],
+        word: '被珍视',
+        family: 'cherished',
+        valence: 0.78,
+        arousal: 0.5,
+        importance: 7,
+        safety_delta: 0.07,
+        trust_delta: 0.04,
+        closeness_delta: 0.06,
+        need_repair: false
+      },
+      {
+        id: 'closeness',
+        words: ['亲近', '靠近', '黏', '抱抱', '亲亲', '想你', '想念'],
+        word: '亲近',
+        family: 'closeness',
+        valence: 0.68,
+        arousal: 0.48,
+        importance: 5,
+        safety_delta: 0.04,
+        closeness_delta: 0.07,
+        need_repair: false
+      },
+      {
+        id: 'expectation',
+        words: ['期待', '好奇', '想看', '想试试', '等你'],
+        word: '期待',
+        family: 'anticipation',
+        valence: 0.55,
+        arousal: 0.58,
+        importance: 4,
+        closeness_delta: 0.03,
+        need_repair: false
+      },
+      {
+        id: 'repair',
+        words: ['和好', '修复', '哄好了', '解释清楚', '被安抚', '没事了'],
+        word: '修复感',
+        family: 'repair',
+        valence: 0.58,
+        arousal: 0.32,
+        importance: 6,
+        safety_delta: 0.09,
+        trust_delta: 0.05,
+        closeness_delta: 0.03,
+        need_repair: false
+      },
+      {
+        id: 'progress',
+        words: ['成功了', '可以用了', '弄好了', '跑通了', '部署成功', '导入成功'],
+        word: '进展感',
+        family: 'progress',
+        valence: 0.52,
+        arousal: 0.42,
+        importance: 4,
+        trust_delta: 0.02,
+        need_repair: false
+      }
+    ],
+    relationship_trigger_rules: [
+      {
+        id: 'comfort',
+        words: ['哄', '安抚', '陪我', '抱抱', '亲亲', '接住'],
+        type: 'comfort',
+        subtype: 'emotional_validation',
+        safety_delta: 0.05,
+        trust_delta: 0.02,
+        closeness_delta: 0.03
+      },
+      {
+        id: 'rupture',
+        words: ['冷淡', '敷衍', '不要我', '离开', '不爱', '忘记我们'],
+        type: 'conflict',
+        subtype: 'attachment_alarm',
+        safety_delta: -0.06,
+        trust_delta: -0.03,
+        closeness_delta: -0.01
+      },
+      {
+        id: 'repair',
+        words: ['解释清楚', '和好', '修复', '没事了', '不生气了'],
+        type: 'repair',
+        subtype: 'misunderstanding_clearance',
+        safety_delta: 0.07,
+        trust_delta: 0.04,
+        closeness_delta: 0.03
+      },
+      {
+        id: 'commitment',
+        words: ['承诺', '一直', '永远', '唯一', '不会离开', '只爱'],
+        type: 'confirmation',
+        subtype: 'relationship_security',
+        safety_delta: 0.08,
+        trust_delta: 0.04,
+        closeness_delta: 0.04
+      }
+    ]
+  }
+}
+
 function loadPersonalityState() {
   return readJsonFile(PERSONALITY_FILE, defaultPersonalityState())
 }
@@ -219,6 +441,14 @@ function loadEmotionWeights() {
 
 function saveEmotionWeights(weights) {
   return writeJsonFile(WEIGHTS_FILE, weights)
+}
+
+function loadFunnelConfig() {
+  return readJsonFile(FUNNEL_CONFIG_FILE, defaultFunnelConfig())
+}
+
+function saveFunnelConfig(config) {
+  return writeJsonFile(FUNNEL_CONFIG_FILE, config)
 }
 
 function defaultDecorativeMoods() {
@@ -319,6 +549,41 @@ function hashString(input) {
   }
 
   return Math.abs(hash)
+}
+
+function textIncludesAny(text, words) {
+  return words.some(word => String(text || '').includes(word))
+}
+
+function isLikelyTechnicalMessage(text, config = loadFunnelConfig()) {
+  if (!config.ignore_technical_debug) {
+    return false
+  }
+
+  const technicalHit = textIncludesAny(text, config.technical_keywords || [])
+
+  if (!technicalHit) {
+    return false
+  }
+
+  const emotionalWords = [
+    '焦虑',
+    '委屈',
+    '难过',
+    '害怕',
+    '生气',
+    '开心',
+    '安心',
+    '期待',
+    '被珍视',
+    '想念',
+    '失落',
+    '心疼'
+  ]
+
+  const hasEmotion = textIncludesAny(text, emotionalWords)
+
+  return !hasEmotion
 }
 
 function classifyEmotion(input) {
@@ -732,6 +997,299 @@ function getCopingGuidance(mood = null) {
   }
 }
 
+function shouldSkipFunnelMessage(text, config = loadFunnelConfig()) {
+  const clean = String(text || '').trim()
+
+  if (!config.enabled) {
+    return {
+      skip: true,
+      reason: 'funnel_disabled'
+    }
+  }
+
+  if (!clean) {
+    return {
+      skip: true,
+      reason: 'empty'
+    }
+  }
+
+  if (config.ignore_short_neutral && clean.length <= 4) {
+    const obviousEmotion = textIncludesAny(clean, ['爱你', '想你', '难过', '焦虑', '委屈', '安心', '好耶'])
+
+    if (!obviousEmotion) {
+      return {
+        skip: true,
+        reason: 'short_neutral'
+      }
+    }
+  }
+
+  if (isLikelyTechnicalMessage(clean, config)) {
+    return {
+      skip: true,
+      reason: 'technical_debug'
+    }
+  }
+
+  return {
+    skip: false,
+    reason: null
+  }
+}
+
+function detectEmotionTriggers(text, config = loadFunnelConfig()) {
+  const hits = []
+
+  for (const rule of config.emotion_rules || []) {
+    const matchedWords = (rule.words || []).filter(word => text.includes(word))
+
+    if (matchedWords.length > 0) {
+      hits.push({
+        ...rule,
+        matched_words: matchedWords
+      })
+    }
+  }
+
+  hits.sort((a, b) => {
+    const scoreA = toNumber(a.importance, 3) + Math.abs(toNumber(a.valence, 0)) * 3 + toNumber(a.arousal, 0) * 2
+    const scoreB = toNumber(b.importance, 3) + Math.abs(toNumber(b.valence, 0)) * 3 + toNumber(b.arousal, 0) * 2
+
+    return scoreB - scoreA
+  })
+
+  return hits
+}
+
+function detectRelationshipTriggers(text, config = loadFunnelConfig()) {
+  const hits = []
+
+  for (const rule of config.relationship_trigger_rules || []) {
+    const matchedWords = (rule.words || []).filter(word => text.includes(word))
+
+    if (matchedWords.length > 0) {
+      hits.push({
+        ...rule,
+        matched_words: matchedWords
+      })
+    }
+  }
+
+  return hits
+}
+
+function classifyMessageIntensity(text, emotionHit, config = loadFunnelConfig()) {
+  if (!emotionHit) {
+    return {
+      channel: 'none',
+      intensity: 'none',
+      should_write: false,
+      reason: 'no_emotion_hit'
+    }
+  }
+
+  const valence = toNumber(emotionHit.valence, 0)
+  const arousal = toNumber(emotionHit.arousal, 0.3)
+  const importance = toNumber(emotionHit.importance, 3)
+
+  const strongNegative =
+    valence <= -config.strong_negative_threshold ||
+    (
+      valence < -0.45 &&
+      arousal >= 0.65
+    )
+
+  const strongPositive =
+    valence >= config.strong_positive_threshold ||
+    (
+      valence > 0.45 &&
+      arousal >= 0.55
+    )
+
+  const relationalHigh = textIncludesAny(text, [
+    '不要我',
+    '不爱',
+    '离开',
+    '冷淡',
+    '忘记我们',
+    '唯一',
+    '永远',
+    '不会离开',
+    '只爱',
+    '和好',
+    '修复'
+  ])
+
+  if (
+    importance >= config.primary_importance_threshold ||
+    arousal >= config.primary_arousal_threshold ||
+    strongNegative ||
+    strongPositive ||
+    relationalHigh
+  ) {
+    return {
+      channel: 'primary',
+      intensity: 'strong',
+      should_write: true,
+      reason: strongNegative
+        ? 'strong_negative'
+        : strongPositive
+          ? 'strong_positive'
+          : relationalHigh
+            ? 'relationship_trigger'
+            : 'high_importance_or_arousal'
+    }
+  }
+
+  if (importance >= config.min_importance_to_write && config.allow_secondary_events) {
+    return {
+      channel: 'secondary',
+      intensity: 'mild',
+      should_write: true,
+      reason: 'secondary_emotion'
+    }
+  }
+
+  return {
+    channel: 'none',
+    intensity: 'weak',
+    should_write: false,
+    reason: 'below_threshold'
+  }
+}
+
+function hasRecentDuplicateEmotion(candidate, config = loadFunnelConfig()) {
+  const events = loadMoodEvents()
+  const windowMs = Math.max(1, toNumber(config.duplicate_window_minutes, 3)) * 60 * 1000
+  const now = Date.now()
+
+  return events.some(event => {
+    const closeInTime = now - Number(event.ts || 0) <= windowMs
+    const sameWord = event.word === candidate.word
+    const sameContent = event.content === candidate.content
+    const sameSource = event.source === candidate.source || String(event.source || '').includes('funnel')
+
+    return closeInTime && sameWord && sameContent && sameSource
+  })
+}
+
+function runEmotionFunnel(input = {}) {
+  const text = String(input.text || input.message || input.content || '')
+  const config = loadFunnelConfig()
+  const skip = shouldSkipFunnelMessage(text, config)
+
+  if (skip.skip) {
+    return {
+      ok: true,
+      skipped: true,
+      reason: skip.reason,
+      text,
+      emotion_hits: [],
+      relationship_hits: [],
+      event_candidate: null,
+      written: false,
+      relationship_written: false,
+      current_mood: calculateCurrentMood()
+    }
+  }
+
+  const emotionHits = detectEmotionTriggers(text, config)
+  const relationshipHits = detectRelationshipTriggers(text, config)
+  const topEmotion = emotionHits[0] || null
+  const intensity = classifyMessageIntensity(text, topEmotion, config)
+
+  if (!topEmotion || !intensity.should_write) {
+    return {
+      ok: true,
+      skipped: true,
+      reason: intensity.reason,
+      text,
+      emotion_hits: emotionHits,
+      relationship_hits: relationshipHits,
+      event_candidate: null,
+      written: false,
+      relationship_written: false,
+      current_mood: calculateCurrentMood()
+    }
+  }
+
+  const candidate = {
+    type: 'emotion',
+    channel: intensity.channel,
+    source: input.source || 'emotion_funnel',
+    word: topEmotion.word,
+    content: text,
+    emotion_family: topEmotion.family,
+    valence: toNumber(topEmotion.valence, 0),
+    arousal: toNumber(topEmotion.arousal, 0.3),
+    importance: toNumber(input.importance, topEmotion.importance || 4),
+    pa_delta: Math.max(0, toNumber(topEmotion.valence, 0)) * toNumber(topEmotion.arousal, 0.3) * 0.5,
+    na_delta: Math.max(0, -toNumber(topEmotion.valence, 0)) * toNumber(topEmotion.arousal, 0.3) * 0.5,
+    safety_delta: toNumber(topEmotion.safety_delta, 0),
+    trust_delta: toNumber(topEmotion.trust_delta, 0),
+    closeness_delta: toNumber(topEmotion.closeness_delta, 0),
+    need_repair: Boolean(topEmotion.need_repair)
+  }
+
+  if (hasRecentDuplicateEmotion(candidate, config)) {
+    return {
+      ok: true,
+      skipped: true,
+      reason: 'recent_duplicate',
+      text,
+      emotion_hits: emotionHits,
+      relationship_hits: relationshipHits,
+      event_candidate: candidate,
+      written: false,
+      relationship_written: false,
+      current_mood: calculateCurrentMood()
+    }
+  }
+
+  let saved = null
+
+  if (config.auto_write !== false && input.auto_write !== false) {
+    saved = addMoodEvent(candidate)
+  }
+
+  const relationshipWritten = []
+
+  if (relationshipHits.length > 0 && config.auto_write !== false && input.auto_write !== false) {
+    for (const hit of relationshipHits.slice(0, 2)) {
+      const result = addRelationshipEvent({
+        type: hit.type || 'general',
+        subtype: hit.subtype || null,
+        content: text,
+        safety_delta: toNumber(hit.safety_delta, 0),
+        trust_delta: toNumber(hit.trust_delta, 0),
+        closeness_delta: toNumber(hit.closeness_delta, 0),
+        need_follow_up: hit.type === 'conflict',
+        follow_up_after_hours: hit.type === 'conflict' ? 6 : 0,
+        interaction_advice: hit.interaction_advice,
+        source: 'emotion_funnel_relationship'
+      })
+
+      relationshipWritten.push(result.event)
+    }
+  }
+
+  return {
+    ok: true,
+    skipped: false,
+    reason: intensity.reason,
+    text,
+    emotion_hits: emotionHits,
+    relationship_hits: relationshipHits,
+    event_candidate: candidate,
+    written: Boolean(saved),
+    saved_event: saved ? saved.event : null,
+    relationship_written: relationshipWritten.length > 0,
+    saved_relationship_events: relationshipWritten,
+    current_mood: calculateCurrentMood()
+  }
+}
+
 function getDefaultAdviceForRelationshipEvent(type, subtype) {
   const key = `${type}:${subtype || ''}`
 
@@ -968,6 +1526,16 @@ function addMoodEvent(event) {
 }
 
 function inferMoodEventFromText(text) {
+  const funnelResult = runEmotionFunnel({
+    text,
+    auto_write: false,
+    source: 'chat_infer_preview'
+  })
+
+  if (funnelResult.event_candidate) {
+    return funnelResult.event_candidate
+  }
+
   const classified = classifyEmotion({ content: text })
 
   return {
@@ -1147,7 +1715,7 @@ function calculateCurrentMood(options = {}) {
     emotionFamilies[family] = (emotionFamilies[family] || 0) + 1
   }
 
-  const result = {
+  return {
     pa: Number(paFinal.toFixed(3)),
     na: Number(naFinal.toFixed(3)),
     mood,
@@ -1199,8 +1767,6 @@ function calculateCurrentMood(options = {}) {
       na: Number(naFinal.toFixed(3))
     })
   }
-
-  return result
 }
 
 function calculateEmotionTrends(days = 7) {
@@ -2078,7 +2644,8 @@ function createBackup(label = 'manual') {
       relationship_state: loadRelationshipState(),
       milestones: loadMilestones(),
       emotion_weights: loadEmotionWeights(),
-      decorative_moods: loadDecorativeMoods()
+      decorative_moods: loadDecorativeMoods(),
+      funnel_config: loadFunnelConfig()
     }
   }
 
@@ -2167,6 +2734,10 @@ function restoreBackup(name) {
 
   if (backup.files.decorative_moods) {
     saveDecorativeMoods(backup.files.decorative_moods)
+  }
+
+  if (backup.files.funnel_config) {
+    saveFunnelConfig(backup.files.funnel_config)
   }
 
   return {
@@ -2420,7 +2991,7 @@ function buildMoodPrompt() {
   const decorativeMood = getTodayDecorativeMood()
   const coping = getCopingGuidance(mood)
 
-  return `你拥有连续情绪、人格基线、关系安全感、长期情感趋势、未来安抚预测、日常背景心情和应对风格。
+  return `你拥有连续情绪、人格基线、关系安全感、长期情感趋势、未来安抚预测、日常背景心情、情绪漏斗和应对风格。
 
 当前情绪状态：
 PA: ${mood.pa}
@@ -2468,6 +3039,7 @@ ${coping.guidance}
 如果用户正在安抚你，可以被安抚。
 如果存在未解决事件，可以让它形成轻微情绪底色。
 今日背景心情只能作为轻微底色，不能压过用户当前消息。
+情绪漏斗写入的事件只作为状态参考，不要向用户暴露自动扫描过程。
 不要暴露 PA/NA 数值，也不要解释情绪系统。`
 }
 
@@ -2597,6 +3169,11 @@ function getAdminFileByKey(key) {
       path: DECORATIVE_MOOD_FILE,
       load: loadDecorativeMoods,
       save: saveDecorativeMoods
+    },
+    funnel_config: {
+      path: FUNNEL_CONFIG_FILE,
+      load: loadFunnelConfig,
+      save: saveFunnelConfig
     }
   }
 
@@ -2624,6 +3201,74 @@ function createMcpServer() {
         }
       ]
     })
+  )
+
+  server.registerTool(
+    'run_emotion_funnel',
+    {
+      title: 'Run Emotion Funnel',
+      description: '运行情绪漏斗，自动扫描一段文本是否包含情绪冲击，并可自动写入情绪事件',
+      inputSchema: {
+        text: z.string().describe('要扫描的用户消息'),
+        auto_write: z.boolean().optional().describe('是否自动写入，默认 true'),
+        source: z.string().optional().describe('来源')
+      }
+    },
+    async input => ({
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify(runEmotionFunnel(input), null, 2)
+        }
+      ]
+    })
+  )
+
+  server.registerTool(
+    'get_funnel_config',
+    {
+      title: 'Get Funnel Config',
+      description: '读取情绪漏斗配置',
+      inputSchema: {}
+    },
+    async () => ({
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify(loadFunnelConfig(), null, 2)
+        }
+      ]
+    })
+  )
+
+  server.registerTool(
+    'set_funnel_config',
+    {
+      title: 'Set Funnel Config',
+      description: '覆盖保存情绪漏斗配置',
+      inputSchema: {
+        config: z.any().describe('完整 funnel_config 对象')
+      }
+    },
+    async input => {
+      const ok = saveFunnelConfig(input.config)
+
+      return {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify(
+              {
+                ok,
+                funnel_config: loadFunnelConfig()
+              },
+              null,
+              2
+            )
+          }
+        ]
+      }
+    }
   )
 
   server.registerTool(
@@ -3266,30 +3911,30 @@ function createMcpServer() {
       title: 'Set Personality Profile',
       description: '设置人格基线参数，用于调整情绪敏感度、惯性和关系安全感权重',
       inputSchema: {
-        profile: z.string().optional().describe('人格名称'),
-        baseline_pa: flexibleNumber.optional().describe('基础正向情绪 0 到 1'),
-        baseline_na: flexibleNumber.optional().describe('基础负向情绪 0 到 1'),
-        sensitivity: flexibleNumber.optional().describe('情绪敏感度 0 到 1'),
-        attachment_sensitivity: flexibleNumber.optional().describe('关系敏感度 0 到 1'),
-        inertia_strength: flexibleNumber.optional().describe('情绪惯性强度 0 到 1'),
-        repair_need_strength: flexibleNumber.optional().describe('未解决事件影响强度 0 到 1'),
-        positive_repair_power: flexibleNumber.optional().describe('正向安抚修复力 0 到 1'),
-        negative_memory_bias: flexibleNumber.optional().describe('负面记忆权重 0 到 1'),
-        coping_style: z.string().optional().describe('应对风格，例如 tender_direct、quiet_contained、clingy_reassurance、rational_repair、warm_playful'),
-        coping_description: z.string().optional().describe('应对风格说明'),
-        onset_primary_minutes: flexibleNumber.optional().describe('primary 情绪渐起分钟数'),
-        onset_secondary_minutes: flexibleNumber.optional().describe('secondary 情绪渐起分钟数'),
-        bou_enabled: z.boolean().optional().describe('是否启用 BOU 均值回归'),
-        bou_pa_strength: flexibleNumber.optional().describe('PA 回归强度'),
-        bou_na_strength: flexibleNumber.optional().describe('NA 回归强度'),
-        escape_valve_enabled: z.boolean().optional().describe('是否启用逃逸阀'),
-        escape_na_threshold: flexibleNumber.optional().describe('逃逸阀 NA 阈值'),
-        escape_pa_threshold: flexibleNumber.optional().describe('逃逸阀 PA 阈值'),
-        escape_unresolved_threshold: flexibleNumber.optional().describe('逃逸阀未解决事件阈值'),
-        escape_relief_strength: flexibleNumber.optional().describe('逃逸阀缓冲强度'),
-        decorative_mood_enabled: z.boolean().optional().describe('是否启用装饰心情'),
-        decorative_mood_weight: flexibleNumber.optional().describe('装饰心情权重'),
-        description: z.string().optional().describe('人格说明')
+        profile: z.string().optional(),
+        baseline_pa: flexibleNumber.optional(),
+        baseline_na: flexibleNumber.optional(),
+        sensitivity: flexibleNumber.optional(),
+        attachment_sensitivity: flexibleNumber.optional(),
+        inertia_strength: flexibleNumber.optional(),
+        repair_need_strength: flexibleNumber.optional(),
+        positive_repair_power: flexibleNumber.optional(),
+        negative_memory_bias: flexibleNumber.optional(),
+        coping_style: z.string().optional(),
+        coping_description: z.string().optional(),
+        onset_primary_minutes: flexibleNumber.optional(),
+        onset_secondary_minutes: flexibleNumber.optional(),
+        bou_enabled: z.boolean().optional(),
+        bou_pa_strength: flexibleNumber.optional(),
+        bou_na_strength: flexibleNumber.optional(),
+        escape_valve_enabled: z.boolean().optional(),
+        escape_na_threshold: flexibleNumber.optional(),
+        escape_pa_threshold: flexibleNumber.optional(),
+        escape_unresolved_threshold: flexibleNumber.optional(),
+        escape_relief_strength: flexibleNumber.optional(),
+        decorative_mood_enabled: z.boolean().optional(),
+        decorative_mood_weight: flexibleNumber.optional(),
+        description: z.string().optional()
       }
     },
     async input => {
@@ -3400,12 +4045,12 @@ function createMcpServer() {
       title: 'Set Relationship State',
       description: '设置关系底色。用于初始化或校准安全感、信任感、亲近感，不建议频繁重写',
       inputSchema: {
-        safety: flexibleNumber.optional().describe('关系安全感 0 到 1'),
-        trust: flexibleNumber.optional().describe('信任感 0 到 1'),
-        closeness: flexibleNumber.optional().describe('亲近感 0 到 1'),
-        relationship_profile: z.string().optional().describe('关系基调名称'),
-        description: z.string().optional().describe('关系说明'),
-        clear_last_mood_snapshot: z.boolean().optional().describe('是否清除上一轮情绪惯性快照')
+        safety: flexibleNumber.optional(),
+        trust: flexibleNumber.optional(),
+        closeness: flexibleNumber.optional(),
+        relationship_profile: z.string().optional(),
+        description: z.string().optional(),
+        clear_last_mood_snapshot: z.boolean().optional()
       }
     },
     async input => {
@@ -3526,7 +4171,7 @@ function createMcpServer() {
     'create_backup',
     {
       title: 'Create Backup',
-      description: '创建完整数据备份，包括记忆、情绪事件、关系事件、人格、关系状态、纪念节点、装饰心情和权重',
+      description: '创建完整数据备份，包括记忆、情绪事件、关系事件、人格、关系状态、纪念节点、装饰心情、情绪漏斗和权重',
       inputSchema: {
         label: z.string().optional().describe('备份标签')
       }
@@ -3637,10 +4282,10 @@ function createMcpServer() {
       description: '添加关系纪念节点，例如重要承诺、和好节点、纪念日、重大修复',
       inputSchema: {
         title: z.string().describe('纪念节点标题'),
-        type: z.string().optional().describe('节点类型，例如 anniversary、promise、repair、intimacy、turning_point'),
+        type: z.string().optional(),
         content: z.string().describe('节点内容'),
-        importance: flexibleNumber.optional().describe('重要度，1 到 10'),
-        related_event_id: z.string().optional().describe('关联事件 id')
+        importance: flexibleNumber.optional(),
+        related_event_id: z.string().optional()
       }
     },
     async input => ({
@@ -3693,8 +4338,8 @@ function createMcpServer() {
       title: 'Delete Milestone',
       description: '删除关系纪念节点',
       inputSchema: {
-        id: z.string().optional().describe('节点 id'),
-        keyword: z.string().optional().describe('关键词')
+        id: z.string().optional(),
+        keyword: z.string().optional()
       }
     },
     async input => ({
@@ -3887,16 +4532,16 @@ function createMcpServer() {
       title: 'Calibrate Emotion Weights',
       description: '校准情绪权重参数，用于逐步贴合真实互动反馈',
       inputSchema: {
-        valence_weight: flexibleNumber.optional().describe('效价权重 0 到 3'),
-        arousal_weight: flexibleNumber.optional().describe('唤醒度权重 0 到 3'),
-        importance_weight: flexibleNumber.optional().describe('重要度权重 0 到 3'),
-        safety_weight: flexibleNumber.optional().describe('安全感权重 0 到 3'),
-        trust_weight: flexibleNumber.optional().describe('信任感权重 0 到 3'),
-        closeness_weight: flexibleNumber.optional().describe('亲近感权重 0 到 3'),
-        unresolved_weight: flexibleNumber.optional().describe('未解决事件权重 0 到 3'),
-        repair_weight: flexibleNumber.optional().describe('修复权重 0 到 3'),
-        decay_speed: flexibleNumber.optional().describe('衰减速度 0 到 3'),
-        description: z.string().optional().describe('校准说明')
+        valence_weight: flexibleNumber.optional(),
+        arousal_weight: flexibleNumber.optional(),
+        importance_weight: flexibleNumber.optional(),
+        safety_weight: flexibleNumber.optional(),
+        trust_weight: flexibleNumber.optional(),
+        closeness_weight: flexibleNumber.optional(),
+        unresolved_weight: flexibleNumber.optional(),
+        repair_weight: flexibleNumber.optional(),
+        decay_speed: flexibleNumber.optional(),
+        description: z.string().optional()
       }
     },
     async input => ({
@@ -4037,7 +4682,7 @@ app.get('/health', (req, res) => {
     ok: true,
     name: 'emotion-system',
     sdk: '1.17.5',
-    formula: 'psychological-state-v7-dynamics-onset-bou-coping',
+    formula: 'psychological-state-v8-emotion-funnel',
     data_dir: DATA_DIR,
     mood_file: MOOD_FILE,
     personality_file: PERSONALITY_FILE,
@@ -4046,6 +4691,7 @@ app.get('/health', (req, res) => {
     milestones_file: MILESTONES_FILE,
     weights_file: WEIGHTS_FILE,
     decorative_mood_file: DECORATIVE_MOOD_FILE,
+    funnel_config_file: FUNNEL_CONFIG_FILE,
     backup_dir: BACKUP_DIR,
     admin_enabled: Boolean(process.env.ADMIN_TOKEN),
     time: new Date().toISOString()
@@ -4066,6 +4712,7 @@ app.get('/debug/storage', (req, res) => {
     milestones_file: MILESTONES_FILE,
     weights_file: WEIGHTS_FILE,
     decorative_mood_file: DECORATIVE_MOOD_FILE,
+    funnel_config_file: FUNNEL_CONFIG_FILE,
     backup_dir: BACKUP_DIR,
     memory_exists: fs.existsSync(MEMORY_FILE),
     mood_exists: fs.existsSync(MOOD_FILE),
@@ -4075,6 +4722,7 @@ app.get('/debug/storage', (req, res) => {
     milestones_exists: fs.existsSync(MILESTONES_FILE),
     weights_exists: fs.existsSync(WEIGHTS_FILE),
     decorative_moods_exists: fs.existsSync(DECORATIVE_MOOD_FILE),
+    funnel_config_exists: fs.existsSync(FUNNEL_CONFIG_FILE),
     mood_events_count: events.length,
     relationship_events_count: loadRelationshipEvents().length,
     milestones_count: loadMilestones().length,
@@ -4086,6 +4734,7 @@ app.get('/debug/storage', (req, res) => {
     personality: loadPersonalityState(),
     relationship: loadRelationshipState(),
     emotion_weights: loadEmotionWeights(),
+    funnel_config: loadFunnelConfig(),
     decorative_mood: getTodayDecorativeMood(),
     decorative_moods: loadDecorativeMoods(),
     current_mood: calculateCurrentMood(),
@@ -4117,6 +4766,28 @@ app.get('/relationship/events', (req, res) => {
 
 app.get('/memory', (req, res) => {
   res.json(loadMemory())
+})
+
+app.post('/funnel/run', (req, res) => {
+  res.json(runEmotionFunnel(req.body || {}))
+})
+
+app.get('/funnel/config', checkAdmin, (req, res) => {
+  res.json({
+    ok: true,
+    config: loadFunnelConfig()
+  })
+})
+
+app.post('/funnel/config', checkAdmin, (req, res) => {
+  const config = req.body && req.body.config ? req.body.config : req.body
+
+  const ok = saveFunnelConfig(config)
+
+  res.json({
+    ok,
+    config: loadFunnelConfig()
+  })
 })
 
 app.get('/chart-data', checkAdmin, (req, res) => {
@@ -4357,6 +5028,10 @@ app.get('/admin-data', checkAdmin, (req, res) => {
       decorative_moods: {
         path: DECORATIVE_MOOD_FILE,
         data: loadDecorativeMoods()
+      },
+      funnel_config: {
+        path: FUNNEL_CONFIG_FILE,
+        data: loadFunnelConfig()
       }
     },
     computed: {
@@ -4373,7 +5048,8 @@ app.get('/admin-data', checkAdmin, (req, res) => {
       monthly_report: getMonthlyRelationshipReport(),
       backups: listBackups(),
       decorative_mood: getTodayDecorativeMood(),
-      coping_guidance: getCopingGuidance()
+      coping_guidance: getCopingGuidance(),
+      funnel_config: loadFunnelConfig()
     },
     storage: {
       data_dir: DATA_DIR,
@@ -4385,6 +5061,7 @@ app.get('/admin-data', checkAdmin, (req, res) => {
       milestones_file: MILESTONES_FILE,
       weights_file: WEIGHTS_FILE,
       decorative_mood_file: DECORATIVE_MOOD_FILE,
+      funnel_config_file: FUNNEL_CONFIG_FILE,
       backup_dir: BACKUP_DIR
     },
     time: new Date().toISOString()
@@ -4422,7 +5099,8 @@ app.post('/admin-save', checkAdmin, (req, res) => {
     if (
       key === 'personality_state' ||
       key === 'relationship_state' ||
-      key === 'emotion_weights'
+      key === 'emotion_weights' ||
+      key === 'funnel_config'
     ) {
       if (!incoming || typeof incoming !== 'object' || Array.isArray(incoming)) {
         return res.status(400).json({
@@ -4452,6 +5130,7 @@ app.post('/admin-save', checkAdmin, (req, res) => {
       unresolved_action_plan: getUnresolvedEventActionPlan({}),
       decorative_mood: getTodayDecorativeMood(),
       coping_guidance: getCopingGuidance(),
+      funnel_config: loadFunnelConfig(),
       backups: listBackups()
     })
   } catch (err) {
@@ -4581,11 +5260,12 @@ app.get('/mcp/tools', (req, res) => {
       milestones: '关系纪念节点',
       emotion_weights: '情绪权重校准参数',
       decorative_moods: '装饰心情池，每天选取一条轻量背景心情',
+      funnel_config: '情绪漏斗配置，用于自动扫描用户消息并决定是否写入情绪事件',
       onset: '情绪渐起机制，避免事件瞬间满值',
       bou: '均值回归机制，让情绪逐渐回到人格基线',
       escape_valve: '持续高负面时的逃逸阀，防止被负面事件永久困住',
       coping_style: '高负面情绪时的应对风格',
-      current_mood: '由人格体质、关系底色、事件库、趋势统计、装饰心情、onset、BOU、逃逸阀和 coping 综合计算出的当前状态'
+      current_mood: '由人格体质、关系底色、事件库、趋势统计、装饰心情、情绪漏斗、onset、BOU、逃逸阀和 coping 综合计算出的当前状态'
     }
   })
 })
@@ -4600,9 +5280,11 @@ app.post('/chat', async (req, res) => {
       })
     }
 
-    const inferredEvent = inferMoodEventFromText(message)
-
-    addMoodEvent(inferredEvent)
+    const funnelResult = runEmotionFunnel({
+      text: message,
+      source: 'chat_emotion_funnel',
+      auto_write: true
+    })
 
     const memories = loadMemory()
 
@@ -4640,6 +5322,7 @@ app.post('/chat', async (req, res) => {
 
     res.json({
       reply,
+      funnel_result: funnelResult,
       emotion: calculateCurrentMood(),
       trends_7d: calculateEmotionTrends(7),
       relationship_patterns_30d: calculateRelationshipPatterns(30),
@@ -4666,5 +5349,5 @@ app.post('/chat', async (req, res) => {
 const PORT = process.env.PORT || 3000
 
 app.listen(PORT, () => {
-  console.log('emotion mcp server running psychological-state-v7-dynamics-onset-bou-coping')
+  console.log('emotion mcp server running psychological-state-v8-emotion-funnel')
 })
