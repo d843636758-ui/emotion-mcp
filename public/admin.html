@@ -30,6 +30,12 @@
       font-size: 18px;
     }
 
+    h3 {
+      margin: 12px 0 8px;
+      font-size: 15px;
+      color: #e5e7eb;
+    }
+
     .panel {
       background: #181820;
       border: 1px solid #2c2c36;
@@ -45,7 +51,8 @@
       align-items: center;
     }
 
-    input {
+    input,
+    select {
       width: 100%;
       padding: 12px;
       border-radius: 12px;
@@ -75,6 +82,10 @@
 
     button.good {
       background: #047857;
+    }
+
+    button.warn {
+      background: #b45309;
     }
 
     .tabs {
@@ -115,6 +126,17 @@
       border-radius: 14px;
       max-height: 420px;
       overflow: auto;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    canvas {
+      width: 100%;
+      height: 260px;
+      background: #0f0f14;
+      border: 1px solid #2c2c36;
+      border-radius: 14px;
+      display: block;
     }
 
     .grid {
@@ -126,6 +148,10 @@
     @media (min-width: 900px) {
       .grid.two {
         grid-template-columns: 1fr 1fr;
+      }
+
+      .grid.three {
+        grid-template-columns: 1fr 1fr 1fr;
       }
     }
 
@@ -153,6 +179,23 @@
       color: #fecaca;
       font-size: 13px;
     }
+
+    .mini {
+      font-size: 12px;
+      color: #a1a1aa;
+    }
+
+    .card {
+      background: #0f0f14;
+      border: 1px solid #2c2c36;
+      border-radius: 14px;
+      padding: 12px;
+      margin-top: 10px;
+    }
+
+    .danger-zone {
+      border-color: #7f1d1d;
+    }
   </style>
 </head>
 
@@ -162,12 +205,15 @@
   <div class="panel">
     <h2>管理员口令</h2>
     <p class="muted">输入 Zeabur 里设置的 ADMIN_TOKEN。口令只保存在当前浏览器 localStorage。</p>
+
     <input id="tokenInput" placeholder="ADMIN_TOKEN" />
+
     <div class="row" style="margin-top:10px;">
       <button onclick="saveToken()">保存口令</button>
       <button class="secondary" onclick="loadAll()">刷新全部数据</button>
-      <button class="secondary" onclick="downloadBackup()">下载完整备份</button>
+      <button class="secondary" onclick="downloadBackup()">下载当前完整快照</button>
     </div>
+
     <p id="tokenStatus" class="status"></p>
   </div>
 
@@ -185,6 +231,103 @@
   </div>
 
   <div class="panel">
+    <h2>情绪与关系曲线</h2>
+    <p class="muted">曲线数据来自最近 30 天的 mood_events 和 relationship_events。</p>
+
+    <div class="grid two">
+      <div>
+        <h3>PA / NA 曲线</h3>
+        <canvas id="moodChart"></canvas>
+      </div>
+
+      <div>
+        <h3>safety / trust / closeness 曲线</h3>
+        <canvas id="relationshipChart"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <div class="grid two">
+    <div class="panel">
+      <h2>周报</h2>
+      <pre id="weeklyReport">等待加载...</pre>
+    </div>
+
+    <div class="panel">
+      <h2>月报</h2>
+      <pre id="monthlyReport">等待加载...</pre>
+    </div>
+  </div>
+
+  <div class="grid two">
+    <div class="panel">
+      <h2>关系行为分析</h2>
+      <pre id="behaviorAnalysis">等待加载...</pre>
+    </div>
+
+    <div class="panel">
+      <h2>未解决事件行动指南</h2>
+      <pre id="actionPlan">等待加载...</pre>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>备份管理</h2>
+    <p class="muted">建议每次大改前先创建备份。恢复备份会先自动创建 before-restore 备份。</p>
+
+    <div class="row">
+      <input id="backupLabel" placeholder="备份标签，比如 before-cleaning" />
+      <button class="good" onclick="createServerBackup()">创建服务器备份</button>
+      <button class="secondary" onclick="loadBackups()">刷新备份列表</button>
+    </div>
+
+    <div style="margin-top:10px;">
+      <select id="backupSelect"></select>
+    </div>
+
+    <div class="row" style="margin-top:10px;">
+      <button class="warn" onclick="restoreSelectedBackup()">恢复选中备份</button>
+    </div>
+
+    <pre id="backupList">等待加载...</pre>
+  </div>
+
+  <div class="panel danger-zone">
+    <h2>清洗工具</h2>
+    <p class="muted">这些操作会自动先创建备份。还是那句话，动刀前先看清楚。</p>
+
+    <div class="row">
+      <button class="warn" onclick="cleanDuplicateEvents()">清理重复事件</button>
+      <button class="warn" onclick="cleanTestEvents()">清理测试事件</button>
+      <button class="secondary" onclick="normalizeEvents()">规范化旧事件</button>
+    </div>
+
+    <pre id="cleanResult">暂无操作</pre>
+  </div>
+
+  <div class="panel">
+    <h2>纪念节点</h2>
+    <p class="muted">记录重要承诺、纪念日、和好节点、重大修复等。</p>
+
+    <div class="grid two">
+      <input id="milestoneTitle" placeholder="标题，比如 一周年纪念日" />
+      <input id="milestoneType" placeholder="类型，比如 anniversary / promise / repair" />
+    </div>
+
+    <div style="margin-top:10px;">
+      <input id="milestoneContent" placeholder="内容" />
+    </div>
+
+    <div class="row" style="margin-top:10px;">
+      <input id="milestoneImportance" placeholder="重要度 1-10，默认 5" />
+      <button class="good" onclick="addMilestone()">添加纪念节点</button>
+      <button class="secondary" onclick="loadMilestones()">刷新纪念节点</button>
+    </div>
+
+    <pre id="milestoneList">等待加载...</pre>
+  </div>
+
+  <div class="panel">
     <h2>存储路径</h2>
     <pre id="storageData">等待加载...</pre>
   </div>
@@ -198,10 +341,12 @@
       <button id="tab-relationship_events" onclick="selectTab('relationship_events')">relationship_events</button>
       <button id="tab-personality_state" onclick="selectTab('personality_state')">personality_state</button>
       <button id="tab-relationship_state" onclick="selectTab('relationship_state')">relationship_state</button>
+      <button id="tab-milestones" onclick="selectTab('milestones')">milestones</button>
+      <button id="tab-emotion_weights" onclick="selectTab('emotion_weights')">emotion_weights</button>
     </div>
 
     <p class="muted">
-      修改前建议先下载完整备份。保存时会校验 JSON 格式。
+      保存前会自动创建服务器备份。保存时会校验 JSON 格式。
     </p>
 
     <textarea id="editor"></textarea>
@@ -227,7 +372,9 @@
       'mood_events',
       'relationship_events',
       'personality_state',
-      'relationship_state'
+      'relationship_state',
+      'milestones',
+      'emotion_weights'
     ]
 
     function getToken() {
@@ -266,25 +413,33 @@
       document.getElementById('saveStatus').textContent = ''
     }
 
+    async function requestJson(url, options = {}) {
+      const res = await fetch(url, options)
+      const data = await res.json()
+
+      if (!res.ok || data.ok === false) {
+        throw new Error(data.error || '请求失败')
+      }
+
+      return data
+    }
+
     async function loadAll() {
       try {
-        const res = await fetch('/admin-data?days=7', {
+        const data = await requestJson('/admin-data?days=7', {
           headers: {
             'x-admin-token': getToken()
           }
         })
 
-        const data = await res.json()
-
-        if (!data.ok) {
-          setError(data.error || '加载失败')
-          return
-        }
-
         allData = data
 
         renderDashboard()
         selectTab(currentKey)
+        renderCharts()
+        renderBackups()
+        renderMilestones()
+
         setStatus('数据已刷新 ' + new Date().toLocaleString())
       } catch (err) {
         setError('加载失败：' + err.message)
@@ -315,10 +470,17 @@
 
       setText('computedData', {
         emotion_trends: allData.computed.emotion_trends,
-        relationship_patterns: allData.computed.relationship_patterns
+        relationship_patterns: allData.computed.relationship_patterns,
+        repair_patterns: allData.computed.repair_patterns,
+        emotional_forecast: allData.computed.emotional_forecast,
+        care_suggestions: allData.computed.care_suggestions
       })
 
-      setText('storageData', allData.storage)
+      setText('weeklyReport', allData.computed.weekly_report || {})
+      setText('monthlyReport', allData.computed.monthly_report || {})
+      setText('behaviorAnalysis', allData.computed.relationship_behavior_analysis || {})
+      setText('actionPlan', allData.computed.unresolved_action_plan || {})
+      setText('storageData', allData.storage || {})
     }
 
     function selectTab(key) {
@@ -355,13 +517,13 @@
         const raw = document.getElementById('editor').value
         const parsed = JSON.parse(raw)
 
-        const sure = confirm('确认保存 ' + currentKey + ' 吗？建议你已经下载过备份。')
+        const sure = confirm('确认保存 ' + currentKey + ' 吗？保存前会自动创建服务器备份。')
 
         if (!sure) {
           return
         }
 
-        const res = await fetch('/admin-save', {
+        const data = await requestJson('/admin-save', {
           method: 'POST',
           headers: headers(),
           body: JSON.stringify({
@@ -370,14 +532,8 @@
           })
         })
 
-        const data = await res.json()
-
-        if (!data.ok) {
-          setError(data.error || '保存失败')
-          return
-        }
-
         setStatus('保存成功：' + currentKey)
+
         await loadAll()
       } catch (err) {
         setError('保存失败：' + err.message)
@@ -398,11 +554,11 @@
       const a = document.createElement('a')
 
       a.href = url
-      a.download = 'emotion-mcp-backup-' + new Date().toISOString().replace(/[:.]/g, '-') + '.json'
+      a.download = 'emotion-mcp-snapshot-' + new Date().toISOString().replace(/[:.]/g, '-') + '.json'
       a.click()
 
       URL.revokeObjectURL(url)
-      setStatus('备份已下载')
+      setStatus('当前快照已下载')
     }
 
     async function resetLastMoodSnapshot() {
@@ -410,42 +566,351 @@
 
       if (!sure) return
 
-      const res = await fetch('/admin-reset-last-mood-snapshot', {
+      const data = await requestJson('/admin-reset-last-mood-snapshot', {
         method: 'POST',
         headers: headers(),
         body: JSON.stringify({})
       })
-
-      const data = await res.json()
-
-      if (!data.ok) {
-        setError(data.error || '操作失败')
-        return
-      }
 
       setStatus('已清除情绪惯性快照')
       await loadAll()
     }
 
     async function recalculateMood() {
-      const res = await fetch('/admin-recalculate', {
+      const data = await requestJson('/admin-recalculate', {
         method: 'POST',
         headers: headers(),
         body: JSON.stringify({})
       })
 
-      const data = await res.json()
-
-      if (!data.ok) {
-        setError(data.error || '重算失败')
-        return
-      }
-
       setStatus('已重算当前 mood')
       await loadAll()
     }
 
+    async function createServerBackup() {
+      try {
+        const label = document.getElementById('backupLabel').value.trim() || 'manual-admin'
+
+        const data = await requestJson('/admin/create-backup', {
+          method: 'POST',
+          headers: headers(),
+          body: JSON.stringify({
+            label
+          })
+        })
+
+        setText('backupList', data)
+        setStatus('服务器备份已创建')
+        await loadAll()
+      } catch (err) {
+        setError('创建备份失败：' + err.message)
+      }
+    }
+
+    async function loadBackups() {
+      try {
+        const data = await requestJson('/admin/backups', {
+          headers: {
+            'x-admin-token': getToken()
+          }
+        })
+
+        setText('backupList', data)
+        renderBackupSelect(data.backups || [])
+        setStatus('备份列表已刷新')
+      } catch (err) {
+        setError('读取备份失败：' + err.message)
+      }
+    }
+
+    function renderBackups() {
+      const backups = allData && allData.computed && allData.computed.backups ? allData.computed.backups : []
+      setText('backupList', {
+        ok: true,
+        backups
+      })
+      renderBackupSelect(backups)
+    }
+
+    function renderBackupSelect(backups) {
+      const select = document.getElementById('backupSelect')
+      select.innerHTML = ''
+
+      if (!backups.length) {
+        const option = document.createElement('option')
+        option.value = ''
+        option.textContent = '暂无备份'
+        select.appendChild(option)
+        return
+      }
+
+      for (const backup of backups) {
+        const option = document.createElement('option')
+        option.value = backup.name
+        option.textContent = backup.name
+        select.appendChild(option)
+      }
+    }
+
+    async function restoreSelectedBackup() {
+      try {
+        const name = document.getElementById('backupSelect').value
+
+        if (!name) {
+          setError('没有选中备份')
+          return
+        }
+
+        const sure = confirm('确认恢复这个备份吗？恢复前会自动创建 before-restore 备份。')
+
+        if (!sure) return
+
+        const data = await requestJson('/admin/restore-backup', {
+          method: 'POST',
+          headers: headers(),
+          body: JSON.stringify({
+            name
+          })
+        })
+
+        setText('backupList', data)
+        setStatus('备份已恢复')
+        await loadAll()
+      } catch (err) {
+        setError('恢复备份失败：' + err.message)
+      }
+    }
+
+    async function cleanDuplicateEvents() {
+      try {
+        const sure = confirm('确认清理重复事件吗？系统会先自动备份。')
+
+        if (!sure) return
+
+        const data = await requestJson('/admin/clean-duplicates', {
+          method: 'POST',
+          headers: headers(),
+          body: JSON.stringify({
+            window_minutes: 10
+          })
+        })
+
+        setText('cleanResult', data)
+        setStatus('重复事件清理完成')
+        await loadAll()
+      } catch (err) {
+        setError('清理失败：' + err.message)
+      }
+    }
+
+    async function cleanTestEvents() {
+      try {
+        const sure = confirm('确认清理测试事件吗？系统会先自动备份。')
+
+        if (!sure) return
+
+        const data = await requestJson('/admin/clean-test-events', {
+          method: 'POST',
+          headers: headers(),
+          body: JSON.stringify({})
+        })
+
+        setText('cleanResult', data)
+        setStatus('测试事件清理完成')
+        await loadAll()
+      } catch (err) {
+        setError('清理失败：' + err.message)
+      }
+    }
+
+    async function normalizeEvents() {
+      try {
+        const sure = confirm('确认规范化旧事件吗？系统会先自动备份。')
+
+        if (!sure) return
+
+        const data = await requestJson('/admin/normalize-events', {
+          method: 'POST',
+          headers: headers(),
+          body: JSON.stringify({})
+        })
+
+        setText('cleanResult', data)
+        setStatus('旧事件规范化完成')
+        await loadAll()
+      } catch (err) {
+        setError('规范化失败：' + err.message)
+      }
+    }
+
+    async function addMilestone() {
+      try {
+        const title = document.getElementById('milestoneTitle').value.trim()
+        const type = document.getElementById('milestoneType').value.trim() || 'general'
+        const content = document.getElementById('milestoneContent').value.trim()
+        const importance = document.getElementById('milestoneImportance').value.trim() || 5
+
+        if (!title || !content) {
+          setError('纪念节点需要标题和内容')
+          return
+        }
+
+        const data = await requestJson('/milestones', {
+          method: 'POST',
+          headers: headers(),
+          body: JSON.stringify({
+            title,
+            type,
+            content,
+            importance
+          })
+        })
+
+        setText('milestoneList', data)
+        setStatus('纪念节点已添加')
+        await loadAll()
+      } catch (err) {
+        setError('添加纪念节点失败：' + err.message)
+      }
+    }
+
+    async function loadMilestones() {
+      try {
+        const data = await requestJson('/milestones', {
+          headers: {
+            'x-admin-token': getToken()
+          }
+        })
+
+        setText('milestoneList', data)
+      } catch (err) {
+        setError('读取纪念节点失败：' + err.message)
+      }
+    }
+
+    function renderMilestones() {
+      const milestones = allData && allData.files && allData.files.milestones ? allData.files.milestones.data : []
+      setText('milestoneList', {
+        ok: true,
+        milestones
+      })
+    }
+
+    function drawLineChart(canvasId, labels, seriesList) {
+      const canvas = document.getElementById(canvasId)
+      const ctx = canvas.getContext('2d')
+
+      const rect = canvas.getBoundingClientRect()
+      canvas.width = rect.width * window.devicePixelRatio
+      canvas.height = 260 * window.devicePixelRatio
+
+      ctx.scale(window.devicePixelRatio, window.devicePixelRatio)
+
+      const width = rect.width
+      const height = 260
+      const padding = 34
+
+      ctx.clearRect(0, 0, width, height)
+
+      ctx.strokeStyle = '#2c2c36'
+      ctx.lineWidth = 1
+
+      for (let i = 0; i <= 4; i++) {
+        const y = padding + i * ((height - padding * 2) / 4)
+        ctx.beginPath()
+        ctx.moveTo(padding, y)
+        ctx.lineTo(width - padding, y)
+        ctx.stroke()
+      }
+
+      ctx.fillStyle = '#a1a1aa'
+      ctx.font = '12px sans-serif'
+      ctx.fillText('1.0', 4, padding + 4)
+      ctx.fillText('0.0', 4, height - padding + 4)
+
+      const chartWidth = width - padding * 2
+      const chartHeight = height - padding * 2
+
+      const palette = ['#a78bfa', '#fb7185', '#34d399', '#60a5fa', '#fbbf24']
+
+      seriesList.forEach((series, index) => {
+        const values = series.values || []
+        const color = palette[index % palette.length]
+
+        ctx.strokeStyle = color
+        ctx.lineWidth = 2
+        ctx.beginPath()
+
+        values.forEach((value, i) => {
+          const x = padding + (values.length <= 1 ? 0 : i * chartWidth / (values.length - 1))
+          const y = padding + chartHeight * (1 - Number(value || 0))
+
+          if (i === 0) {
+            ctx.moveTo(x, y)
+          } else {
+            ctx.lineTo(x, y)
+          }
+        })
+
+        ctx.stroke()
+
+        ctx.fillStyle = color
+        ctx.fillText(series.name, padding + index * 90, 18)
+      })
+
+      if (labels && labels.length > 0) {
+        ctx.fillStyle = '#71717a'
+        ctx.font = '11px sans-serif'
+        ctx.fillText(labels[0], padding, height - 8)
+        ctx.fillText(labels[labels.length - 1], width - padding - 70, height - 8)
+      }
+    }
+
+    function renderCharts() {
+      const history = allData && allData.computed && allData.computed.visual_history
+      if (!history || !history.series) return
+
+      drawLineChart('moodChart', history.series.dates, [
+        {
+          name: 'PA',
+          values: history.series.pa
+        },
+        {
+          name: 'NA',
+          values: history.series.na
+        }
+      ])
+
+      drawLineChart('relationshipChart', history.series.dates, [
+        {
+          name: 'safety',
+          values: history.series.safety
+        },
+        {
+          name: 'trust',
+          values: history.series.trust
+        },
+        {
+          name: 'closeness',
+          values: history.series.closeness
+        }
+      ])
+    }
+
+    window.addEventListener('resize', () => {
+      if (allData) {
+        renderCharts()
+      }
+    })
+
     document.getElementById('tokenInput').value = getToken()
+
+    const urlToken = new URLSearchParams(window.location.search).get('token')
+
+    if (urlToken) {
+      localStorage.setItem('emotion_admin_token', urlToken)
+      document.getElementById('tokenInput').value = urlToken
+    }
 
     if (getToken()) {
       loadAll()
