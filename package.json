@@ -5,7 +5,7 @@
   "main": "index.js",
   "type": "commonjs",
   "scripts": {
-    "start": "node index.js"
+    "start": "node patch-mood.js && node index.js"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.17.5",
