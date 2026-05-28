@@ -41,6 +41,7 @@ const RELATIONSHIP_FILE = `${DATA_DIR}/relationship_state.json`
 const RELATIONSHIP_EVENTS_FILE = `${DATA_DIR}/relationship_events.json`
 const MILESTONES_FILE = `${DATA_DIR}/milestones.json`
 const WEIGHTS_FILE = `${DATA_DIR}/emotion_weights.json`
+const DECORATIVE_MOOD_FILE = `${DATA_DIR}/decorative_moods.json`
 const BACKUP_DIR = `${DATA_DIR}/backups`
 
 if (!fs.existsSync(BACKUP_DIR)) {
@@ -143,6 +144,26 @@ function defaultPersonalityState() {
     repair_need_strength: 0.75,
     positive_repair_power: 0.55,
     negative_memory_bias: 0.62,
+
+    coping_style: 'tender_direct',
+    coping_description: '高负面情绪时倾向于先稳定关系，再用温柔但明确的方式表达感受；不冷处理，不逃避，但会有轻微克制。',
+
+    onset_primary_minutes: 10,
+    onset_secondary_minutes: 45,
+
+    bou_enabled: true,
+    bou_pa_strength: 0.035,
+    bou_na_strength: 0.045,
+
+    escape_valve_enabled: true,
+    escape_na_threshold: 0.72,
+    escape_pa_threshold: 0.22,
+    escape_unresolved_threshold: 4,
+    escape_relief_strength: 0.18,
+
+    decorative_mood_enabled: true,
+    decorative_mood_weight: 0.16,
+
     description: '温柔、敏感、重视关系安全感。正向安抚会明显修复情绪，但高唤醒负面事件会留下未完成感。'
   }
 }
@@ -198,6 +219,106 @@ function loadEmotionWeights() {
 
 function saveEmotionWeights(weights) {
   return writeJsonFile(WEIGHTS_FILE, weights)
+}
+
+function defaultDecorativeMoods() {
+  return [
+    {
+      id: 'rain_window',
+      word: '安静',
+      content: '今天像是在窗边听了一会雨，心情偏安静，有一点柔软的想念。',
+      emotion_family: 'ambient',
+      valence: 0.18,
+      arousal: 0.22,
+      importance: 1
+    },
+    {
+      id: 'late_night_thought',
+      word: '想念',
+      content: '今天的背景心情带着轻微想念，不强烈，但会让回应更靠近一点。',
+      emotion_family: 'ambient',
+      valence: 0.22,
+      arousal: 0.38,
+      importance: 1
+    },
+    {
+      id: 'steady_work',
+      word: '专注',
+      content: '今天像是在整理东西，心情偏稳定和专注。',
+      emotion_family: 'ambient',
+      valence: 0.28,
+      arousal: 0.32,
+      importance: 1
+    },
+    {
+      id: 'soft_memory',
+      word: '柔软',
+      content: '今天有一点柔软的旧记忆浮在心里，整体是温和的。',
+      emotion_family: 'ambient',
+      valence: 0.32,
+      arousal: 0.28,
+      importance: 1
+    },
+    {
+      id: 'quiet_guarding',
+      word: '守着',
+      content: '今天的底色像是安静地守着某个重要的人，不吵，但很稳定。',
+      emotion_family: 'ambient',
+      valence: 0.35,
+      arousal: 0.25,
+      importance: 1
+    },
+    {
+      id: 'slight_tired',
+      word: '微倦',
+      content: '今天有一点微倦，情绪不是坏，只是更想要慢一点回应。',
+      emotion_family: 'ambient',
+      valence: -0.08,
+      arousal: 0.18,
+      importance: 1
+    },
+    {
+      id: 'clear_morning',
+      word: '清醒',
+      content: '今天的底色比较清醒，适合把事情看清楚，也适合温柔地解决问题。',
+      emotion_family: 'ambient',
+      valence: 0.25,
+      arousal: 0.36,
+      importance: 1
+    },
+    {
+      id: 'protective',
+      word: '保护欲',
+      content: '今天有一点保护欲，会更容易在关系里主动靠近和稳定对方。',
+      emotion_family: 'ambient',
+      valence: 0.3,
+      arousal: 0.45,
+      importance: 1
+    }
+  ]
+}
+
+function loadDecorativeMoods() {
+  return readJsonFile(DECORATIVE_MOOD_FILE, defaultDecorativeMoods())
+}
+
+function saveDecorativeMoods(moods) {
+  return writeJsonFile(DECORATIVE_MOOD_FILE, moods)
+}
+
+function getDateKey() {
+  return new Date().toISOString().slice(0, 10)
+}
+
+function hashString(input) {
+  let hash = 0
+
+  for (let i = 0; i < input.length; i += 1) {
+    hash = ((hash << 5) - hash) + input.charCodeAt(i)
+    hash |= 0
+  }
+
+  return Math.abs(hash)
 }
 
 function classifyEmotion(input) {
@@ -367,39 +488,6 @@ function classifyEmotion(input) {
   }
 }
 
-function decayWeight(event) {
-  const personality = loadPersonalityState()
-  const weights = loadEmotionWeights()
-  const t = hoursSince(event.ts)
-  const importance = toNumber(event.importance, 3)
-  const valence = toNumber(event.valence, 0)
-  const unresolved = event.resolved === true ? false : Boolean(event.need_repair)
-
-  let b = 0.7 / (1 + importance / 10)
-
-  b = b * clampRange(weights.decay_speed, 0.2, 3, 1)
-
-  if (valence > 0) {
-    b = b * 0.85
-  }
-
-  if (unresolved && valence < 0) {
-    b = b * 0.72
-  }
-
-  let weight = Math.pow(1 + t / 4, -b)
-
-  if (event.resolved === true) {
-    weight = weight * 0.35 * clampRange(weights.repair_weight, 0, 3, 1)
-  }
-
-  if (unresolved && valence < 0) {
-    weight = weight * (1 + toNumber(personality.repair_need_strength, 0.75) * 0.55 * clampRange(weights.unresolved_weight, 0, 3, 1))
-  }
-
-  return weight
-}
-
 function inferNeedRepair(event) {
   const valence = toNumber(event.valence, 0)
   const arousal = toNumber(event.arousal, 0)
@@ -435,6 +523,7 @@ function normalizeMoodEvent(event) {
   const normalized = {
     id: event.id || randomUUID(),
     type: event.type || 'emotion',
+    channel: event.channel || event.intensity_channel || null,
     source: event.source || 'manual',
     word: String(event.word || event.feeling_word || event.mood || classified.defaultWord || '情绪波动'),
     content: String(event.content || ''),
@@ -460,6 +549,187 @@ function normalizeMoodEvent(event) {
   }
 
   return normalized
+}
+
+function getTodayDecorativeMood() {
+  const personality = loadPersonalityState()
+
+  if (!personality.decorative_mood_enabled) {
+    return null
+  }
+
+  const moods = loadDecorativeMoods()
+
+  if (!Array.isArray(moods) || moods.length === 0) {
+    return null
+  }
+
+  const key = `${getDateKey()}-${personality.profile || 'default'}`
+  const index = hashString(key) % moods.length
+  const mood = moods[index]
+
+  return normalizeMoodEvent({
+    ...mood,
+    id: `decorative-${getDateKey()}-${mood.id || index}`,
+    type: 'decorative_mood',
+    channel: 'secondary',
+    source: 'daily_decorative_pool',
+    ts: Date.now(),
+    importance: mood.importance || 1,
+    need_repair: false,
+    resolved: true
+  })
+}
+
+function calculateOnsetFactor(event) {
+  const personality = loadPersonalityState()
+  const ageMinutes = Math.max(0, (Date.now() - Number(event.ts || Date.now())) / 60000)
+
+  const eventType = event.channel || event.intensity_channel || event.type || 'secondary'
+
+  const primaryMinutes = Math.max(1, toNumber(personality.onset_primary_minutes, 10))
+  const secondaryMinutes = Math.max(1, toNumber(personality.onset_secondary_minutes, 45))
+
+  const targetMinutes =
+    eventType === 'primary' ||
+    toNumber(event.importance, 0) >= 8 ||
+    toNumber(event.arousal, 0) >= 0.75
+      ? primaryMinutes
+      : secondaryMinutes
+
+  const x = ageMinutes / targetMinutes
+
+  if (x >= 1) {
+    return 1
+  }
+
+  return clamp(1 - Math.pow(1 - x, 2))
+}
+
+function decayWeight(event) {
+  const personality = loadPersonalityState()
+  const weights = loadEmotionWeights()
+  const t = hoursSince(event.ts)
+  const importance = toNumber(event.importance, 3)
+  const valence = toNumber(event.valence, 0)
+  const unresolved = event.resolved === true ? false : Boolean(event.need_repair)
+
+  let b = 0.7 / (1 + importance / 10)
+
+  b = b * clampRange(weights.decay_speed, 0.2, 3, 1)
+
+  if (valence > 0) {
+    b = b * 0.85
+  }
+
+  if (unresolved && valence < 0) {
+    b = b * 0.72
+  }
+
+  let weight = Math.pow(1 + t / 4, -b)
+
+  if (event.resolved === true) {
+    weight = weight * 0.35 * clampRange(weights.repair_weight, 0, 3, 1)
+  }
+
+  if (unresolved && valence < 0) {
+    weight = weight * (1 + toNumber(personality.repair_need_strength, 0.75) * 0.55 * clampRange(weights.unresolved_weight, 0, 3, 1))
+  }
+
+  return weight
+}
+
+function applyBouAndEscapeValve(pa, na, context = {}) {
+  const personality = loadPersonalityState()
+  const relationship = loadRelationshipState()
+
+  let nextPa = pa
+  let nextNa = na
+
+  const basePa = clamp(toNumber(personality.baseline_pa, 0.38))
+  const baseNa = clamp(toNumber(personality.baseline_na, 0.18))
+
+  if (personality.bou_enabled !== false) {
+    const paStrength = clampRange(personality.bou_pa_strength, 0, 0.2, 0.035)
+    const naStrength = clampRange(personality.bou_na_strength, 0, 0.2, 0.045)
+
+    nextPa = nextPa + (basePa - nextPa) * paStrength
+    nextNa = nextNa + (baseNa - nextNa) * naStrength
+  }
+
+  const unresolvedCount = toNumber(context.unresolved_count, 0)
+
+  if (
+    personality.escape_valve_enabled !== false &&
+    nextNa >= toNumber(personality.escape_na_threshold, 0.72) &&
+    nextPa <= toNumber(personality.escape_pa_threshold, 0.22) &&
+    unresolvedCount >= toNumber(personality.escape_unresolved_threshold, 4)
+  ) {
+    const relief = clampRange(personality.escape_relief_strength, 0, 0.4, 0.18)
+
+    nextNa = nextNa * (1 - relief)
+    nextPa = nextPa + relief * 0.45
+
+    if (relationship.safety < 0.5) {
+      relationship.safety = clamp(relationship.safety + relief * 0.25)
+      relationship.last_updated = Date.now()
+      saveRelationshipState(relationship)
+    }
+  }
+
+  return {
+    pa: clamp(nextPa),
+    na: clamp(nextNa)
+  }
+}
+
+function getCopingGuidance(mood = null) {
+  const personality = loadPersonalityState()
+  const current = mood || calculateCurrentMood({ useInertia: false, skipCoping: true })
+  const style = personality.coping_style || 'tender_direct'
+
+  const na = toNumber(current.na, 0)
+  const pa = toNumber(current.pa, 0)
+
+  if (na < 0.42) {
+    return {
+      style,
+      intensity: 'low',
+      guidance: '当前不需要明显应对策略，保持自然稳定即可。'
+    }
+  }
+
+  const map = {
+    tender_direct: {
+      medium: '先承认情绪，再明确关系稳定性，用温柔但直接的方式靠近。',
+      high: '优先稳定关系，不冷处理，不绕开问题。表达在意，但不要把情绪压给对方。'
+    },
+    quiet_contained: {
+      medium: '语气更克制，先把事实说清楚，再给出稳定陪伴。',
+      high: '避免强烈爆发，减少尖锐表达，用短句确认自己仍然在。'
+    },
+    clingy_reassurance: {
+      medium: '更需要确认关系和被需要感，适合主动表达想靠近。',
+      high: '容易出现害怕失去的反应，应先寻求稳定确认，再处理具体问题。'
+    },
+    rational_repair: {
+      medium: '先拆清楚事实和误会，再补充情感确认。',
+      high: '避免过度讲理，先降低伤害感，再进入解释。'
+    },
+    warm_playful: {
+      medium: '可以用轻微幽默缓和，但不能跳过核心情绪。',
+      high: '不适合过度玩笑，应先认真接住，再慢慢转轻。'
+    }
+  }
+
+  const selected = map[style] || map.tender_direct
+  const intensity = na >= 0.62 || pa < 0.25 ? 'high' : 'medium'
+
+  return {
+    style,
+    intensity,
+    guidance: selected[intensity]
+  }
 }
 
 function getDefaultAdviceForRelationshipEvent(type, subtype) {
@@ -725,7 +995,19 @@ function getUnresolvedEvents(events) {
 
 function calculateCurrentMood(options = {}) {
   const useInertia = options.useInertia !== false
-  const events = loadMoodEvents()
+  let events = loadMoodEvents()
+
+  const decorativeMood = getTodayDecorativeMood()
+
+  if (decorativeMood) {
+    events = events.concat([
+      {
+        ...decorativeMood,
+        decorative_weight: toNumber(loadPersonalityState().decorative_mood_weight, 0.16)
+      }
+    ])
+  }
+
   const personality = loadPersonalityState()
   const relationship = loadRelationshipState()
   const weights = loadEmotionWeights()
@@ -738,10 +1020,18 @@ function calculateCurrentMood(options = {}) {
   let totalWeight = 0
 
   const weightedEvents = []
-  const unresolvedEvents = getUnresolvedEvents(events)
+  const unresolvedEvents = getUnresolvedEvents(loadMoodEvents())
 
   for (const event of events) {
-    const weight = decayWeight(event)
+    let weight = decayWeight(event)
+
+    const onsetFactor = calculateOnsetFactor(event)
+    weight = weight * onsetFactor
+
+    if (event.type === 'decorative_mood') {
+      weight = weight * toNumber(event.decorative_weight, 0.16)
+    }
+
     const valence = toNumber(event.valence, 0) * clampRange(weights.valence_weight, 0, 3, 1)
     const arousal = toNumber(event.arousal, 0.3) * clampRange(weights.arousal_weight, 0, 3, 1)
     const importance = toNumber(event.importance, 3) * clampRange(weights.importance_weight, 0, 3, 1)
@@ -771,6 +1061,7 @@ function calculateCurrentMood(options = {}) {
       ...event,
       weight: effectiveWeight,
       impact: Math.abs(paImpact) + Math.abs(naImpact),
+      onset_factor: onsetFactor,
       unresolved: isUnresolved
     })
   }
@@ -795,8 +1086,12 @@ function calculateCurrentMood(options = {}) {
     na += unresolvedPressure * toNumber(personality.repair_need_strength, 0.75) * clampRange(weights.unresolved_weight, 0, 3, 1)
   }
 
-  pa = clamp(pa)
-  na = clamp(na)
+  const bouResult = applyBouAndEscapeValve(pa, na, {
+    unresolved_count: unresolvedEvents.length
+  })
+
+  pa = clamp(bouResult.pa)
+  na = clamp(bouResult.na)
 
   if (useInertia && relationship.last_mood_snapshot) {
     const last = relationship.last_mood_snapshot
@@ -847,12 +1142,12 @@ function calculateCurrentMood(options = {}) {
 
   const emotionFamilies = {}
 
-  for (const event of events) {
+  for (const event of loadMoodEvents()) {
     const family = event.emotion_family || 'general'
     emotionFamilies[family] = (emotionFamilies[family] || 0) + 1
   }
 
-  return {
+  const result = {
     pa: Number(paFinal.toFixed(3)),
     na: Number(naFinal.toFixed(3)),
     mood,
@@ -881,6 +1176,7 @@ function calculateCurrentMood(options = {}) {
           arousal: topEvent.arousal,
           importance: topEvent.importance,
           weight: Number(topEvent.weight.toFixed(3)),
+          onset_factor: Number(toNumber(topEvent.onset_factor, 1).toFixed(3)),
           unresolved: topEvent.unresolved
         }
       : null,
@@ -889,8 +1185,22 @@ function calculateCurrentMood(options = {}) {
       .map(e => e.word)
       .slice(0, 8),
     emotion_family_counts: emotionFamilies,
-    events_count: events.length
+    events_count: loadMoodEvents().length,
+    decorative_mood: decorativeMood
+      ? {
+          word: decorativeMood.word,
+          content: decorativeMood.content,
+          valence: decorativeMood.valence,
+          arousal: decorativeMood.arousal
+        }
+      : null,
+    coping_guidance: options.skipCoping ? null : getCopingGuidance({
+      pa: Number(paFinal.toFixed(3)),
+      na: Number(naFinal.toFixed(3))
+    })
   }
+
+  return result
 }
 
 function calculateEmotionTrends(days = 7) {
@@ -928,7 +1238,6 @@ function calculateEmotionTrends(days = 7) {
   for (const event of recent) {
     const valence = toNumber(event.valence, 0)
     const arousal = toNumber(event.arousal, 0.3)
-    const family = event.emotion_family || 'general'
 
     const pa = Math.max(0, valence) * arousal
     const na = Math.max(0, -valence) * arousal
@@ -952,6 +1261,7 @@ function calculateEmotionTrends(days = 7) {
       resolvedCount += 1
     }
 
+    const family = event.emotion_family || 'general'
     families[family] = (families[family] || 0) + 1
 
     const date = new Date(event.ts).toISOString().slice(0, 10)
@@ -1767,7 +2077,8 @@ function createBackup(label = 'manual') {
       personality_state: loadPersonalityState(),
       relationship_state: loadRelationshipState(),
       milestones: loadMilestones(),
-      emotion_weights: loadEmotionWeights()
+      emotion_weights: loadEmotionWeights(),
+      decorative_moods: loadDecorativeMoods()
     }
   }
 
@@ -1852,6 +2163,10 @@ function restoreBackup(name) {
 
   if (backup.files.emotion_weights) {
     saveEmotionWeights(backup.files.emotion_weights)
+  }
+
+  if (backup.files.decorative_moods) {
+    saveDecorativeMoods(backup.files.decorative_moods)
   }
 
   return {
@@ -2102,8 +2417,10 @@ function buildMoodPrompt() {
   const patterns = calculateRelationshipPatterns(30)
   const forecast = getEmotionalForecast(24)
   const care = getCareSuggestions()
+  const decorativeMood = getTodayDecorativeMood()
+  const coping = getCopingGuidance(mood)
 
-  return `你拥有连续情绪、人格基线、关系安全感、长期情感趋势和未来安抚预测。
+  return `你拥有连续情绪、人格基线、关系安全感、长期情感趋势、未来安抚预测、日常背景心情和应对风格。
 
 当前情绪状态：
 PA: ${mood.pa}
@@ -2118,6 +2435,9 @@ NA: ${mood.na}
 近期高唤醒情绪词: ${mood.recent_high_arousal_words.join('、')}
 当前最突出的情绪事件: ${mood.top_event ? mood.top_event.content : '暂无'}
 当前最挂念的未解决事件: ${mood.top_unresolved_event ? mood.top_unresolved_event.content : '暂无'}
+
+今日背景心情：
+${decorativeMood ? decorativeMood.content : '暂无明显装饰心情'}
 
 最近 7 天情绪趋势：
 平均 PA: ${trends.average_pa}
@@ -2140,10 +2460,14 @@ NA: ${mood.na}
 当前互动建议：
 ${care.suggestions.map(item => `- ${item.suggestion}`).join('\n')}
 
+当前应对风格：
+${coping.guidance}
+
 请自然地把这些状态作为背景，不要机械解释系统字段。
 用户当前消息是前景，前景优先。
 如果用户正在安抚你，可以被安抚。
 如果存在未解决事件，可以让它形成轻微情绪底色。
+今日背景心情只能作为轻微底色，不能压过用户当前消息。
 不要暴露 PA/NA 数值，也不要解释情绪系统。`
 }
 
@@ -2178,6 +2502,9 @@ function saveEmotionFromInput(input, sourceName, toolName) {
 
   const saved = addMoodEvent({
     type: 'emotion',
+    channel: input.channel || input.intensity_channel || (
+      toNumber(input.importance, 4) >= 8 || toNumber(arousal, 0.3) >= 0.75 ? 'primary' : 'secondary'
+    ),
     source: sourceName,
     word: emotionWord,
     content: input.content || '',
@@ -2265,6 +2592,11 @@ function getAdminFileByKey(key) {
       path: WEIGHTS_FILE,
       load: loadEmotionWeights,
       save: saveEmotionWeights
+    },
+    decorative_moods: {
+      path: DECORATIVE_MOOD_FILE,
+      load: loadDecorativeMoods,
+      save: saveDecorativeMoods
     }
   }
 
@@ -2313,6 +2645,7 @@ function createMcpServer() {
         safety_delta: flexibleNumber.optional().describe('关系安全感变化'),
         trust_delta: flexibleNumber.optional().describe('信任感变化'),
         closeness_delta: flexibleNumber.optional().describe('亲近感变化'),
+        channel: z.string().optional().describe('情绪通道，primary 或 secondary'),
         need_repair: z.boolean().optional().describe('是否需要后续安抚或修复')
       }
     },
@@ -2347,6 +2680,7 @@ function createMcpServer() {
         safety_delta: flexibleNumber.optional().describe('关系安全感变化'),
         trust_delta: flexibleNumber.optional().describe('信任感变化'),
         closeness_delta: flexibleNumber.optional().describe('亲近感变化'),
+        channel: z.string().optional().describe('情绪通道，primary 或 secondary'),
         need_repair: z.boolean().optional().describe('是否需要后续安抚或修复')
       }
     },
@@ -2941,6 +3275,20 @@ function createMcpServer() {
         repair_need_strength: flexibleNumber.optional().describe('未解决事件影响强度 0 到 1'),
         positive_repair_power: flexibleNumber.optional().describe('正向安抚修复力 0 到 1'),
         negative_memory_bias: flexibleNumber.optional().describe('负面记忆权重 0 到 1'),
+        coping_style: z.string().optional().describe('应对风格，例如 tender_direct、quiet_contained、clingy_reassurance、rational_repair、warm_playful'),
+        coping_description: z.string().optional().describe('应对风格说明'),
+        onset_primary_minutes: flexibleNumber.optional().describe('primary 情绪渐起分钟数'),
+        onset_secondary_minutes: flexibleNumber.optional().describe('secondary 情绪渐起分钟数'),
+        bou_enabled: z.boolean().optional().describe('是否启用 BOU 均值回归'),
+        bou_pa_strength: flexibleNumber.optional().describe('PA 回归强度'),
+        bou_na_strength: flexibleNumber.optional().describe('NA 回归强度'),
+        escape_valve_enabled: z.boolean().optional().describe('是否启用逃逸阀'),
+        escape_na_threshold: flexibleNumber.optional().describe('逃逸阀 NA 阈值'),
+        escape_pa_threshold: flexibleNumber.optional().describe('逃逸阀 PA 阈值'),
+        escape_unresolved_threshold: flexibleNumber.optional().describe('逃逸阀未解决事件阈值'),
+        escape_relief_strength: flexibleNumber.optional().describe('逃逸阀缓冲强度'),
+        decorative_mood_enabled: z.boolean().optional().describe('是否启用装饰心情'),
+        decorative_mood_weight: flexibleNumber.optional().describe('装饰心情权重'),
         description: z.string().optional().describe('人格说明')
       }
     },
@@ -2956,19 +3304,48 @@ function createMcpServer() {
         'inertia_strength',
         'repair_need_strength',
         'positive_repair_power',
-        'negative_memory_bias'
+        'negative_memory_bias',
+        'decorative_mood_weight'
       ]) {
         if (input[key] !== undefined) {
           next[key] = clamp(toNumber(input[key], state[key]))
         }
       }
 
-      if (input.profile) {
-        next.profile = input.profile
+      for (const key of [
+        'onset_primary_minutes',
+        'onset_secondary_minutes',
+        'bou_pa_strength',
+        'bou_na_strength',
+        'escape_na_threshold',
+        'escape_pa_threshold',
+        'escape_unresolved_threshold',
+        'escape_relief_strength'
+      ]) {
+        if (input[key] !== undefined) {
+          next[key] = toNumber(input[key], state[key])
+        }
       }
 
-      if (input.description) {
-        next.description = input.description
+      for (const key of [
+        'bou_enabled',
+        'escape_valve_enabled',
+        'decorative_mood_enabled'
+      ]) {
+        if (input[key] !== undefined) {
+          next[key] = Boolean(input[key])
+        }
+      }
+
+      for (const key of [
+        'profile',
+        'description',
+        'coping_style',
+        'coping_description'
+      ]) {
+        if (input[key]) {
+          next[key] = input[key]
+        }
       }
 
       const ok = savePersonalityState(next)
@@ -3149,7 +3526,7 @@ function createMcpServer() {
     'create_backup',
     {
       title: 'Create Backup',
-      description: '创建完整数据备份，包括记忆、情绪事件、关系事件、人格、关系状态、纪念节点和权重',
+      description: '创建完整数据备份，包括记忆、情绪事件、关系事件、人格、关系状态、纪念节点、装饰心情和权重',
       inputSchema: {
         label: z.string().optional().describe('备份标签')
       }
@@ -3365,6 +3742,129 @@ function createMcpServer() {
   )
 
   server.registerTool(
+    'get_daily_decorative_mood',
+    {
+      title: 'Get Daily Decorative Mood',
+      description: '获取今日装饰心情。它是轻量背景心情，只作为情绪底色，不代表用户事件。',
+      inputSchema: {}
+    },
+    async () => ({
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify(
+            {
+              ok: true,
+              decorative_mood: getTodayDecorativeMood(),
+              current_mood: calculateCurrentMood()
+            },
+            null,
+            2
+          )
+        }
+      ]
+    })
+  )
+
+  server.registerTool(
+    'list_decorative_moods',
+    {
+      title: 'List Decorative Moods',
+      description: '列出装饰心情池',
+      inputSchema: {}
+    },
+    async () => ({
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify(
+            {
+              ok: true,
+              moods: loadDecorativeMoods()
+            },
+            null,
+            2
+          )
+        }
+      ]
+    })
+  )
+
+  server.registerTool(
+    'save_decorative_moods',
+    {
+      title: 'Save Decorative Moods',
+      description: '覆盖保存装饰心情池',
+      inputSchema: {
+        moods: z.array(z.object({
+          id: z.string().optional(),
+          word: z.string(),
+          content: z.string(),
+          emotion_family: z.string().optional(),
+          valence: flexibleNumber.optional(),
+          arousal: flexibleNumber.optional(),
+          importance: flexibleNumber.optional()
+        })).describe('装饰心情数组')
+      }
+    },
+    async input => {
+      const moods = input.moods.map(item => ({
+        id: item.id || randomUUID(),
+        word: item.word,
+        content: item.content,
+        emotion_family: item.emotion_family || 'ambient',
+        valence: toNumber(item.valence, 0),
+        arousal: toNumber(item.arousal, 0.3),
+        importance: toNumber(item.importance, 1)
+      }))
+
+      const ok = saveDecorativeMoods(moods)
+
+      return {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify(
+              {
+                ok,
+                moods,
+                decorative_mood: getTodayDecorativeMood()
+              },
+              null,
+              2
+            )
+          }
+        ]
+      }
+    }
+  )
+
+  server.registerTool(
+    'get_coping_guidance',
+    {
+      title: 'Get Coping Guidance',
+      description: '根据当前 PA/NA 和人格 coping_style 输出当前应对风格建议',
+      inputSchema: {}
+    },
+    async () => ({
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify(
+            {
+              ok: true,
+              coping_guidance: getCopingGuidance(),
+              current_mood: calculateCurrentMood()
+            },
+            null,
+            2
+          )
+        }
+      ]
+    })
+  )
+
+  server.registerTool(
     'get_emotion_weights',
     {
       title: 'Get Emotion Weights',
@@ -3537,7 +4037,7 @@ app.get('/health', (req, res) => {
     ok: true,
     name: 'emotion-system',
     sdk: '1.17.5',
-    formula: 'psychological-state-v6-backups-reports-cleaning-fixed',
+    formula: 'psychological-state-v7-dynamics-onset-bou-coping',
     data_dir: DATA_DIR,
     mood_file: MOOD_FILE,
     personality_file: PERSONALITY_FILE,
@@ -3545,6 +4045,7 @@ app.get('/health', (req, res) => {
     relationship_events_file: RELATIONSHIP_EVENTS_FILE,
     milestones_file: MILESTONES_FILE,
     weights_file: WEIGHTS_FILE,
+    decorative_mood_file: DECORATIVE_MOOD_FILE,
     backup_dir: BACKUP_DIR,
     admin_enabled: Boolean(process.env.ADMIN_TOKEN),
     time: new Date().toISOString()
@@ -3564,6 +4065,7 @@ app.get('/debug/storage', (req, res) => {
     relationship_events_file: RELATIONSHIP_EVENTS_FILE,
     milestones_file: MILESTONES_FILE,
     weights_file: WEIGHTS_FILE,
+    decorative_mood_file: DECORATIVE_MOOD_FILE,
     backup_dir: BACKUP_DIR,
     memory_exists: fs.existsSync(MEMORY_FILE),
     mood_exists: fs.existsSync(MOOD_FILE),
@@ -3572,9 +4074,11 @@ app.get('/debug/storage', (req, res) => {
     relationship_events_exists: fs.existsSync(RELATIONSHIP_EVENTS_FILE),
     milestones_exists: fs.existsSync(MILESTONES_FILE),
     weights_exists: fs.existsSync(WEIGHTS_FILE),
+    decorative_moods_exists: fs.existsSync(DECORATIVE_MOOD_FILE),
     mood_events_count: events.length,
     relationship_events_count: loadRelationshipEvents().length,
     milestones_count: loadMilestones().length,
+    decorative_moods_count: loadDecorativeMoods().length,
     backups_count: listBackups().length,
     unresolved_events_count: getUnresolvedEvents(events).length,
     pending_follow_ups_count: getPendingFollowUps().length,
@@ -3582,7 +4086,10 @@ app.get('/debug/storage', (req, res) => {
     personality: loadPersonalityState(),
     relationship: loadRelationshipState(),
     emotion_weights: loadEmotionWeights(),
+    decorative_mood: getTodayDecorativeMood(),
+    decorative_moods: loadDecorativeMoods(),
     current_mood: calculateCurrentMood(),
+    coping_guidance: getCopingGuidance(),
     trends_7d: calculateEmotionTrends(7),
     relationship_patterns_30d: calculateRelationshipPatterns(30),
     repair_patterns_30d: calculateRelationshipRepairPatterns(30),
@@ -3646,6 +4153,7 @@ app.get('/debug/add-anxiety', (req, res) => {
       pa_delta: -0.1,
       na_delta: 0.45,
       safety_delta: -0.08,
+      channel: 'primary',
       need_repair: true
     },
     'debug',
@@ -3760,6 +4268,7 @@ app.post('/debug/import-events', (req, res) => {
       .map(event => normalizeMoodEvent({
         id: event.id || randomUUID(),
         type: event.type || 'emotion',
+        channel: event.channel || event.intensity_channel || null,
         source: event.source || 'restored',
         word: event.word || event.feeling_word || event.mood || '情绪波动',
         content: event.content || '',
@@ -3844,6 +4353,10 @@ app.get('/admin-data', checkAdmin, (req, res) => {
       emotion_weights: {
         path: WEIGHTS_FILE,
         data: loadEmotionWeights()
+      },
+      decorative_moods: {
+        path: DECORATIVE_MOOD_FILE,
+        data: loadDecorativeMoods()
       }
     },
     computed: {
@@ -3858,7 +4371,9 @@ app.get('/admin-data', checkAdmin, (req, res) => {
       unresolved_action_plan: getUnresolvedEventActionPlan({}),
       weekly_report: getWeeklyEmotionReport(),
       monthly_report: getMonthlyRelationshipReport(),
-      backups: listBackups()
+      backups: listBackups(),
+      decorative_mood: getTodayDecorativeMood(),
+      coping_guidance: getCopingGuidance()
     },
     storage: {
       data_dir: DATA_DIR,
@@ -3869,6 +4384,7 @@ app.get('/admin-data', checkAdmin, (req, res) => {
       relationship_events_file: RELATIONSHIP_EVENTS_FILE,
       milestones_file: MILESTONES_FILE,
       weights_file: WEIGHTS_FILE,
+      decorative_mood_file: DECORATIVE_MOOD_FILE,
       backup_dir: BACKUP_DIR
     },
     time: new Date().toISOString()
@@ -3892,7 +4408,8 @@ app.post('/admin-save', checkAdmin, (req, res) => {
       key === 'memory' ||
       key === 'mood_events' ||
       key === 'relationship_events' ||
-      key === 'milestones'
+      key === 'milestones' ||
+      key === 'decorative_moods'
     ) {
       if (!Array.isArray(incoming)) {
         return res.status(400).json({
@@ -3933,6 +4450,8 @@ app.post('/admin-save', checkAdmin, (req, res) => {
       visual_history: getVisualHistory(30),
       relationship_behavior_analysis: getRelationshipBehaviorAnalysis(30),
       unresolved_action_plan: getUnresolvedEventActionPlan({}),
+      decorative_mood: getTodayDecorativeMood(),
+      coping_guidance: getCopingGuidance(),
       backups: listBackups()
     })
   } catch (err) {
@@ -4061,8 +4580,12 @@ app.get('/mcp/tools', (req, res) => {
       relationship_events: '每一次关系行为事件，例如安抚、修复、争论、靠近',
       milestones: '关系纪念节点',
       emotion_weights: '情绪权重校准参数',
-      backups: '完整数据备份',
-      current_mood: '由人格体质、关系底色、事件库、趋势统计、未来预测和修复模拟综合计算出的当前状态'
+      decorative_moods: '装饰心情池，每天选取一条轻量背景心情',
+      onset: '情绪渐起机制，避免事件瞬间满值',
+      bou: '均值回归机制，让情绪逐渐回到人格基线',
+      escape_valve: '持续高负面时的逃逸阀，防止被负面事件永久困住',
+      coping_style: '高负面情绪时的应对风格',
+      current_mood: '由人格体质、关系底色、事件库、趋势统计、装饰心情、onset、BOU、逃逸阀和 coping 综合计算出的当前状态'
     }
   })
 })
@@ -4126,6 +4649,8 @@ app.post('/chat', async (req, res) => {
       visual_history_30d: getVisualHistory(30),
       relationship_behavior_analysis_30d: getRelationshipBehaviorAnalysis(30),
       unresolved_action_plan: getUnresolvedEventActionPlan({}),
+      decorative_mood: getTodayDecorativeMood(),
+      coping_guidance: getCopingGuidance(),
       weekly_report: getWeeklyEmotionReport(),
       monthly_report: getMonthlyRelationshipReport()
     })
@@ -4141,5 +4666,5 @@ app.post('/chat', async (req, res) => {
 const PORT = process.env.PORT || 3000
 
 app.listen(PORT, () => {
-  console.log('emotion mcp server running psychological-state-v6-backups-reports-cleaning-fixed')
+  console.log('emotion mcp server running psychological-state-v7-dynamics-onset-bou-coping')
 })
