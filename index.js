@@ -1516,7 +1516,7 @@ function getRelationshipBehaviorAnalysis(days = 30) {
   }
 }
 
-function simulateUnresolvedEventRepair(input = {}) {
+function findTargetUnresolvedEvent(input = {}) {
   const events = loadMoodEvents()
   const unresolved = getUnresolvedEvents(events)
 
@@ -1537,12 +1537,36 @@ function simulateUnresolvedEventRepair(input = {}) {
     target = unresolved[0] || null
   }
 
+  return {
+    unresolved,
+    target
+  }
+}
+
+function simulateUnresolvedEventRepair(input = {}) {
+  const found = findTargetUnresolvedEvent(input)
+  const target = found.target
+
   if (!target) {
     return {
       ok: true,
       has_unresolved_event: false,
       message: '当前没有未解决事件',
-      action_plan: getUnresolvedEventActionPlan({})
+      current_mood: calculateCurrentMood(),
+      relationship: loadRelationshipState(),
+      risk_points: [],
+      wrong_moves: [],
+      recommended_moves: [
+        '保持稳定陪伴',
+        '不需要过度修复',
+        '继续自然回应'
+      ],
+      simulated_paths: [],
+      follow_up: {
+        after_hours: 12,
+        action: '保持轻度稳定陪伴',
+        note: '当前没有明显未解决事件，不需要强行修复。'
+      }
     }
   }
 
@@ -1622,22 +1646,46 @@ function simulateUnresolvedEventRepair(input = {}) {
 }
 
 function getUnresolvedEventActionPlan(input = {}) {
-  const simulation = simulateUnresolvedEventRepair(input)
+  const found = findTargetUnresolvedEvent(input)
+  const target = found.target
 
-  if (!simulation.has_unresolved_event) {
+  if (!target) {
     return {
       ok: true,
       has_unresolved_event: false,
+      current_mood: calculateCurrentMood(),
       plan: [
         {
           step: 1,
           title: '保持稳定陪伴',
           detail: '当前没有明显未解决事件，不需要过度修复。'
         }
-      ]
+      ],
+      avoid: [
+        '不要强行制造问题',
+        '不要过度解释系统状态',
+        '不要反复追问是否有事'
+      ],
+      recommended: [
+        '保持自然回应',
+        '维持稳定陪伴',
+        '在有新事件出现时再处理'
+      ],
+      follow_up: {
+        after_hours: 12,
+        action: '轻度稳定陪伴',
+        note: '当前没有未解决事件，维持关系稳定即可。'
+      },
+      expected_effect: {
+        safety_delta: 0,
+        trust_delta: 0,
+        closeness_delta: 0,
+        unresolved_pressure: '无'
+      }
     }
   }
 
+  const simulation = simulateUnresolvedEventRepair(input)
   const event = simulation.target_event
 
   return {
@@ -3489,7 +3537,7 @@ app.get('/health', (req, res) => {
     ok: true,
     name: 'emotion-system',
     sdk: '1.17.5',
-    formula: 'psychological-state-v6-backups-reports-cleaning',
+    formula: 'psychological-state-v6-backups-reports-cleaning-fixed',
     data_dir: DATA_DIR,
     mood_file: MOOD_FILE,
     personality_file: PERSONALITY_FILE,
@@ -3949,6 +3997,12 @@ app.post('/admin/create-backup', checkAdmin, (req, res) => {
   res.json(createBackup(label))
 })
 
+app.get('/admin/create-backup-now', checkAdmin, (req, res) => {
+  const label = req.query.label || 'browser'
+
+  res.json(createBackup(label))
+})
+
 app.post('/admin/restore-backup', checkAdmin, (req, res) => {
   const name = req.body && req.body.name
 
@@ -4009,46 +4063,7 @@ app.get('/mcp/tools', (req, res) => {
       emotion_weights: '情绪权重校准参数',
       backups: '完整数据备份',
       current_mood: '由人格体质、关系底色、事件库、趋势统计、未来预测和修复模拟综合计算出的当前状态'
-    },
-    tools: [
-      { name: 'current_mood', description: '实时获取当前综合心理状态' },
-      { name: 'add_emotion_event', description: '写入情绪事件并实时影响当前情绪' },
-      { name: 'write_emotion_event', description: '写入情绪事件并实时影响当前情绪' },
-      { name: 'list_emotion_events', description: '列出最近的情绪事件' },
-      { name: 'resolve_emotion_event', description: '标记情绪事件为已解决' },
-      { name: 'delete_emotion_event', description: '删除指定情绪事件' },
-      { name: 'add_relationship_event', description: '记录关系行为事件' },
-      { name: 'add_detailed_relationship_event', description: '记录细化关系行为事件' },
-      { name: 'list_relationship_events', description: '列出关系行为事件' },
-      { name: 'get_emotion_trends', description: '统计长期情绪趋势' },
-      { name: 'get_visual_history', description: '获取可视化图表数据' },
-      { name: 'get_relationship_patterns', description: '分析关系动态模式' },
-      { name: 'get_relationship_repair_patterns', description: '分析有效安抚与修复方式' },
-      { name: 'get_relationship_behavior_analysis', description: '分析行为事件如何影响关系动态' },
-      { name: 'get_emotional_forecast', description: '预测未来情绪波动和安抚节点' },
-      { name: 'get_care_suggestions', description: '生成未来互动建议' },
-      { name: 'simulate_unresolved_event_repair', description: '模拟未解决事件的修复路径' },
-      { name: 'get_unresolved_event_action_plan', description: '生成未解决事件行动指南' },
-      { name: 'create_backup', description: '创建完整备份' },
-      { name: 'list_backups', description: '列出备份' },
-      { name: 'restore_backup', description: '恢复备份' },
-      { name: 'clean_duplicate_events', description: '清理重复事件' },
-      { name: 'clean_test_events', description: '清理测试事件' },
-      { name: 'normalize_old_events', description: '规范化旧事件' },
-      { name: 'add_milestone', description: '添加关系纪念节点' },
-      { name: 'list_milestones', description: '列出关系纪念节点' },
-      { name: 'delete_milestone', description: '删除关系纪念节点' },
-      { name: 'get_weekly_emotion_report', description: '生成情绪周报' },
-      { name: 'get_monthly_relationship_report', description: '生成关系月报' },
-      { name: 'get_emotion_weights', description: '读取情绪权重' },
-      { name: 'calibrate_emotion_weights', description: '校准情绪权重' },
-      { name: 'get_personality_profile', description: '读取人格基线' },
-      { name: 'set_personality_profile', description: '设置人格基线' },
-      { name: 'get_relationship_state', description: '读取关系底色' },
-      { name: 'set_relationship_state', description: '设置关系底色' },
-      { name: 'search_memory', description: '搜索历史记忆' },
-      { name: 'write_memory', description: '写入长期记忆' }
-    ]
+    }
   })
 })
 
@@ -4126,5 +4141,5 @@ app.post('/chat', async (req, res) => {
 const PORT = process.env.PORT || 3000
 
 app.listen(PORT, () => {
-  console.log('emotion mcp server running psychological-state-v6-backups-reports-cleaning')
+  console.log('emotion mcp server running psychological-state-v6-backups-reports-cleaning-fixed')
 })
