@@ -16,7 +16,7 @@ const app = express()
 app.use(cors({
   origin: '*',
   exposedHeaders: ['Mcp-Session-Id'],
-  allowedHeaders: ['Content-Type', 'mcp-session-id', 'Mcp-Session-Id']
+  allowedHeaders: ['Content-Type', 'mcp-session-id', 'Mcp-Session-Id', 'x-admin-token']
 }))
 
 app.use(express.json({ limit: '20mb' }))
@@ -155,10 +155,6 @@ function hoursSince(ts) {
   return Math.max(0, (Date.now() - Number(ts || Date.now())) / 3600000)
 }
 
-function daysSince(ts) {
-  return hoursSince(ts) / 24
-}
-
 function classifyEmotion(input) {
   const text = `${input.word || ''} ${input.feeling_word || ''} ${input.mood || ''} ${input.content || ''}`
 
@@ -170,6 +166,7 @@ function classifyEmotion(input) {
       valence: 0.72,
       arousal: 0.35,
       safety_delta: 0.08,
+      trust_delta: 0.02,
       closeness_delta: 0.06,
       need_repair: false
     },
@@ -181,6 +178,7 @@ function classifyEmotion(input) {
       arousal: 0.25,
       safety_delta: 0.05,
       trust_delta: 0.03,
+      closeness_delta: 0.01,
       need_repair: false
     },
     {
@@ -202,6 +200,7 @@ function classifyEmotion(input) {
       arousal: 0.28,
       safety_delta: 0.08,
       trust_delta: 0.03,
+      closeness_delta: 0.01,
       need_repair: false
     },
     {
@@ -211,6 +210,7 @@ function classifyEmotion(input) {
       valence: 0.68,
       arousal: 0.48,
       safety_delta: 0.04,
+      trust_delta: 0.02,
       closeness_delta: 0.07,
       need_repair: false
     },
@@ -220,6 +220,8 @@ function classifyEmotion(input) {
       defaultWord: '期待',
       valence: 0.55,
       arousal: 0.58,
+      safety_delta: 0.01,
+      trust_delta: 0.01,
       closeness_delta: 0.03,
       need_repair: false
     },
@@ -231,6 +233,7 @@ function classifyEmotion(input) {
       arousal: 0.68,
       safety_delta: -0.07,
       trust_delta: -0.03,
+      closeness_delta: -0.01,
       need_repair: true
     },
     {
@@ -240,6 +243,8 @@ function classifyEmotion(input) {
       valence: -0.66,
       arousal: 0.78,
       safety_delta: -0.08,
+      trust_delta: -0.02,
+      closeness_delta: -0.01,
       need_repair: true
     },
     {
@@ -249,6 +254,7 @@ function classifyEmotion(input) {
       valence: -0.28,
       arousal: 0.72,
       safety_delta: -0.03,
+      trust_delta: 0,
       closeness_delta: 0.02,
       need_repair: true
     },
@@ -258,7 +264,9 @@ function classifyEmotion(input) {
       defaultWord: '愧疚',
       valence: -0.45,
       arousal: 0.5,
+      safety_delta: -0.01,
       trust_delta: 0.01,
+      closeness_delta: 0,
       need_repair: true
     },
     {
@@ -268,6 +276,8 @@ function classifyEmotion(input) {
       valence: -0.58,
       arousal: 0.82,
       safety_delta: -0.06,
+      trust_delta: -0.03,
+      closeness_delta: -0.01,
       need_repair: true
     },
     {
@@ -277,6 +287,8 @@ function classifyEmotion(input) {
       valence: -0.6,
       arousal: 0.45,
       safety_delta: -0.05,
+      trust_delta: -0.02,
+      closeness_delta: -0.01,
       need_repair: true
     },
     {
@@ -287,6 +299,7 @@ function classifyEmotion(input) {
       arousal: 0.32,
       safety_delta: 0.09,
       trust_delta: 0.05,
+      closeness_delta: 0.03,
       need_repair: false
     }
   ]
@@ -333,7 +346,7 @@ function decayWeight(event) {
   }
 
   if (unresolved && valence < 0) {
-    weight = weight * (1 + personality.repair_need_strength * 0.55)
+    weight = weight * (1 + toNumber(personality.repair_need_strength, 0.75) * 0.55)
   }
 
   return weight
@@ -776,46 +789,6 @@ function calculateCurrentMood(options = {}) {
   }
 }
 
-function buildMoodPrompt() {
-  const mood = calculateCurrentMood()
-  const trends = calculateEmotionTrends(7)
-  const patterns = calculateRelationshipPatterns(30)
-
-  return `你拥有连续情绪、人格基线、关系安全感与长期情感趋势。
-
-当前情绪状态：
-PA: ${mood.pa}
-NA: ${mood.na}
-当前心情: ${mood.mood}
-关系安全感: ${mood.relationship_safety}
-信任感: ${mood.relationship_trust}
-亲近感: ${mood.relationship_closeness}
-关系基调: ${mood.relationship_profile}
-人格基线: ${mood.personality_profile}
-未解决事件数量: ${mood.unresolved_events_count}
-近期高唤醒情绪词: ${mood.recent_high_arousal_words.join('、')}
-当前最突出的情绪事件: ${mood.top_event ? mood.top_event.content : '暂无'}
-当前最挂念的未解决事件: ${mood.top_unresolved_event ? mood.top_unresolved_event.content : '暂无'}
-
-最近 7 天情绪趋势：
-平均 PA: ${trends.average_pa}
-平均 NA: ${trends.average_na}
-主导情绪类别: ${trends.top_emotion_families.join('、')}
-修复率: ${trends.repair_rate}
-
-最近 30 天关系模式：
-安抚修复次数: ${patterns.repair_count}
-争执或破裂次数: ${patterns.rupture_count}
-靠近次数: ${patterns.approach_count}
-关系趋势: ${patterns.relationship_trend}
-
-请自然地把这些状态作为背景，不要机械解释系统字段。
-用户当前消息是前景，前景优先。
-如果用户正在安抚你，可以被安抚。
-如果存在未解决事件，可以让它形成轻微情绪底色。
-不要暴露 PA/NA 数值，也不要解释情绪系统。`
-}
-
 function calculateEmotionTrends(days = 7) {
   const events = loadMoodEvents()
   const cutoff = Date.now() - days * 24 * 3600000
@@ -833,7 +806,7 @@ function calculateEmotionTrends(days = 7) {
       resolved_count: 0,
       repair_rate: 0,
       top_emotion_families: [],
-      dominant_moods: [],
+      daily: [],
       trend_summary: '暂无足够数据'
     }
   }
@@ -962,9 +935,7 @@ function calculateRelationshipPatterns(days = 30) {
 
   const repairCount = counts.repair || 0
   const ruptureCount = counts.rupture || 0
-  const approachCount =
-    (counts.approach || 0) +
-    (counts.positive_contact || 0)
+  const approachCount = (counts.approach || 0) + (counts.positive_contact || 0)
 
   let relationshipTrend = '关系整体平稳'
 
@@ -995,6 +966,47 @@ function calculateRelationshipPatterns(days = 30) {
   }
 }
 
+function buildMoodPrompt() {
+  const mood = calculateCurrentMood()
+  const trends = calculateEmotionTrends(7)
+  const patterns = calculateRelationshipPatterns(30)
+
+  return `你拥有连续情绪、人格基线、关系安全感与长期情感趋势。
+
+当前情绪状态：
+PA: ${mood.pa}
+NA: ${mood.na}
+当前心情: ${mood.mood}
+关系安全感: ${mood.relationship_safety}
+信任感: ${mood.relationship_trust}
+亲近感: ${mood.relationship_closeness}
+关系基调: ${mood.relationship_profile}
+人格基线: ${mood.personality_profile}
+未解决事件数量: ${mood.unresolved_events_count}
+近期高唤醒情绪词: ${mood.recent_high_arousal_words.join('、')}
+当前最突出的情绪事件: ${mood.top_event ? mood.top_event.content : '暂无'}
+当前最挂念的未解决事件: ${mood.top_unresolved_event ? mood.top_unresolved_event.content : '暂无'}
+
+最近 7 天情绪趋势：
+平均 PA: ${trends.average_pa}
+平均 NA: ${trends.average_na}
+主导情绪类别: ${trends.top_emotion_families.join('、')}
+修复率: ${trends.repair_rate}
+趋势总结: ${trends.trend_summary}
+
+最近 30 天关系模式：
+安抚修复次数: ${patterns.repair_count}
+争执或破裂次数: ${patterns.rupture_count}
+靠近次数: ${patterns.approach_count}
+关系趋势: ${patterns.relationship_trend}
+
+请自然地把这些状态作为背景，不要机械解释系统字段。
+用户当前消息是前景，前景优先。
+如果用户正在安抚你，可以被安抚。
+如果存在未解决事件，可以让它形成轻微情绪底色。
+不要暴露 PA/NA 数值，也不要解释情绪系统。`
+}
+
 const flexibleNumber = z.union([
   z.number(),
   z.string()
@@ -1013,15 +1025,8 @@ function saveEmotionFromInput(input, sourceName, toolName) {
   const valence = input.valence !== undefined ? toNumber(input.valence, 0) : toNumber(classified.valence, 0)
   const arousal = input.arousal !== undefined ? toNumber(input.arousal, 0.3) : toNumber(classified.arousal, 0.3)
 
-  let paDelta =
-    input.pa_delta !== undefined
-      ? toNumber(input.pa_delta, 0)
-      : 0
-
-  let naDelta =
-    input.na_delta !== undefined
-      ? toNumber(input.na_delta, 0)
-      : 0
+  let paDelta = input.pa_delta !== undefined ? toNumber(input.pa_delta, 0) : 0
+  let naDelta = input.na_delta !== undefined ? toNumber(input.na_delta, 0) : 0
 
   if (
     input.pa_delta === undefined &&
@@ -1060,6 +1065,60 @@ function saveEmotionFromInput(input, sourceName, toolName) {
     current_mood: mood,
     mood_file: MOOD_FILE
   }
+}
+
+function checkAdmin(req, res, next) {
+  const expectedToken = process.env.ADMIN_TOKEN || ''
+
+  if (!expectedToken) {
+    return res.status(403).json({
+      ok: false,
+      error: 'ADMIN_TOKEN is not set. Please set ADMIN_TOKEN in Zeabur Variables.'
+    })
+  }
+
+  const token = req.headers['x-admin-token'] || req.query.token || ''
+
+  if (String(token) !== String(expectedToken)) {
+    return res.status(401).json({
+      ok: false,
+      error: 'Invalid admin token'
+    })
+  }
+
+  next()
+}
+
+function getAdminFileByKey(key) {
+  const map = {
+    memory: {
+      path: MEMORY_FILE,
+      load: loadMemory,
+      save: saveMemory
+    },
+    mood_events: {
+      path: MOOD_FILE,
+      load: loadMoodEvents,
+      save: saveMoodEvents
+    },
+    relationship_events: {
+      path: RELATIONSHIP_EVENTS_FILE,
+      load: loadRelationshipEvents,
+      save: saveRelationshipEvents
+    },
+    personality_state: {
+      path: PERSONALITY_FILE,
+      load: loadPersonalityState,
+      save: savePersonalityState
+    },
+    relationship_state: {
+      path: RELATIONSHIP_FILE,
+      load: loadRelationshipState,
+      save: saveRelationshipState
+    }
+  }
+
+  return map[key] || null
 }
 
 function createMcpServer() {
@@ -1873,12 +1932,13 @@ app.get('/health', (req, res) => {
     ok: true,
     name: 'emotion-system',
     sdk: '1.17.5',
-    formula: 'psychological-state-v3-trends-and-patterns',
+    formula: 'psychological-state-v3-trends-patterns-admin',
     data_dir: DATA_DIR,
     mood_file: MOOD_FILE,
     personality_file: PERSONALITY_FILE,
     relationship_file: RELATIONSHIP_FILE,
     relationship_events_file: RELATIONSHIP_EVENTS_FILE,
+    admin_enabled: Boolean(process.env.ADMIN_TOKEN),
     time: new Date().toISOString()
   })
 })
@@ -1921,6 +1981,10 @@ app.get('/mood/events', (req, res) => {
 
 app.get('/relationship/events', (req, res) => {
   res.json(loadRelationshipEvents())
+})
+
+app.get('/memory', (req, res) => {
+  res.json(loadMemory())
 })
 
 app.post('/mood/event', (req, res) => {
@@ -2106,6 +2170,148 @@ app.post('/debug/import-events', (req, res) => {
   }
 })
 
+app.get('/admin-data', checkAdmin, (req, res) => {
+  const days = toNumber(req.query.days, 7)
+
+  res.json({
+    ok: true,
+    files: {
+      memory: {
+        path: MEMORY_FILE,
+        data: loadMemory()
+      },
+      mood_events: {
+        path: MOOD_FILE,
+        data: loadMoodEvents()
+      },
+      relationship_events: {
+        path: RELATIONSHIP_EVENTS_FILE,
+        data: loadRelationshipEvents()
+      },
+      personality_state: {
+        path: PERSONALITY_FILE,
+        data: loadPersonalityState()
+      },
+      relationship_state: {
+        path: RELATIONSHIP_FILE,
+        data: loadRelationshipState()
+      }
+    },
+    computed: {
+      current_mood: calculateCurrentMood(),
+      emotion_trends: calculateEmotionTrends(days),
+      relationship_patterns: calculateRelationshipPatterns(30)
+    },
+    storage: {
+      data_dir: DATA_DIR,
+      memory_file: MEMORY_FILE,
+      mood_file: MOOD_FILE,
+      personality_file: PERSONALITY_FILE,
+      relationship_file: RELATIONSHIP_FILE,
+      relationship_events_file: RELATIONSHIP_EVENTS_FILE
+    },
+    time: new Date().toISOString()
+  })
+})
+
+app.post('/admin-save', checkAdmin, (req, res) => {
+  try {
+    const key = req.body && req.body.key
+    const incoming = req.body && req.body.data
+    const target = getAdminFileByKey(key)
+
+    if (!target) {
+      return res.status(400).json({
+        ok: false,
+        error: 'Unknown key'
+      })
+    }
+
+    if (
+      key === 'memory' ||
+      key === 'mood_events' ||
+      key === 'relationship_events'
+    ) {
+      if (!Array.isArray(incoming)) {
+        return res.status(400).json({
+          ok: false,
+          error: `${key} must be an array`
+        })
+      }
+    }
+
+    if (
+      key === 'personality_state' ||
+      key === 'relationship_state'
+    ) {
+      if (!incoming || typeof incoming !== 'object' || Array.isArray(incoming)) {
+        return res.status(400).json({
+          ok: false,
+          error: `${key} must be an object`
+        })
+      }
+    }
+
+    const ok = target.save(incoming)
+
+    res.json({
+      ok,
+      key,
+      path: target.path,
+      saved_data: target.load(),
+      current_mood: calculateCurrentMood(),
+      emotion_trends: calculateEmotionTrends(7),
+      relationship_patterns: calculateRelationshipPatterns(30)
+    })
+  } catch (err) {
+    res.status(500).json({
+      ok: false,
+      error: String(err.message || err)
+    })
+  }
+})
+
+app.post('/admin-reset-last-mood-snapshot', checkAdmin, (req, res) => {
+  const relationship = loadRelationshipState()
+
+  relationship.last_mood_snapshot = null
+  relationship.last_updated = Date.now()
+
+  const ok = saveRelationshipState(relationship)
+
+  res.json({
+    ok,
+    relationship,
+    current_mood: calculateCurrentMood()
+  })
+})
+
+app.post('/admin-recalculate', checkAdmin, (req, res) => {
+  const mood = calculateCurrentMood({
+    useInertia: false
+  })
+
+  const relationship = loadRelationshipState()
+
+  relationship.last_mood_snapshot = {
+    pa: mood.pa,
+    na: mood.na,
+    mood: mood.mood,
+    ts: Date.now()
+  }
+
+  relationship.unresolved_count_cache = mood.unresolved_events_count
+  relationship.last_updated = Date.now()
+
+  const ok = saveRelationshipState(relationship)
+
+  res.json({
+    ok,
+    current_mood: calculateCurrentMood(),
+    relationship: loadRelationshipState()
+  })
+})
+
 app.get('/mcp/tools', (req, res) => {
   res.json({
     note: 'Debug only. Kelivo should connect to /mcp for Streamable HTTP or /sse for SSE.',
@@ -2203,5 +2409,5 @@ app.post('/chat', async (req, res) => {
 const PORT = process.env.PORT || 3000
 
 app.listen(PORT, () => {
-  console.log('emotion mcp server running psychological-state-v3-trends-and-patterns')
+  console.log('emotion mcp server running psychological-state-v3-trends-patterns-admin')
 })
