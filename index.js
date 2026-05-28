@@ -45,6 +45,8 @@ const DECORATIVE_MOOD_FILE = `${DATA_DIR}/decorative_moods.json`
 const FUNNEL_CONFIG_FILE = `${DATA_DIR}/funnel_config.json`
 const EMOTION_LEXICON_FILE = `${DATA_DIR}/emotion_lexicon.json`
 const CORE_GOALS_FILE = `${DATA_DIR}/core_goals.json`
+const MEMORY_INDEX_FILE = `${DATA_DIR}/memory_index.json`
+const STRATEGY_PROFILE_FILE = `${DATA_DIR}/strategy_profile.json`
 const BACKUP_DIR = `${DATA_DIR}/backups`
 
 if (!fs.existsSync(BACKUP_DIR)) {
@@ -174,6 +176,17 @@ function defaultPersonalityState() {
     minor_event_suppression: 0.28,
     primary_goal_threshold: 0.62,
 
+    memory_activation_enabled: true,
+    memory_activation_sensitivity: 0.76,
+    memory_positive_recall_power: 0.42,
+    memory_negative_recall_power: 0.56,
+    memory_decay_hours: 72,
+
+    strategy_enabled: true,
+    strategy_directness: 0.72,
+    strategy_warmth: 0.82,
+    strategy_repair_priority: 0.84,
+
     emotion_thresholds: {
       anxiety: 0.28,
       hurt: 0.25,
@@ -237,7 +250,9 @@ function defaultEmotionWeights() {
     unresolved_weight: 1,
     repair_weight: 1,
     decay_speed: 1,
-    description: '情绪权重校准参数，用于调整事件、关系、安全感和修复机制的影响强度。'
+    memory_activation_weight: 1,
+    strategy_weight: 1,
+    description: '情绪权重校准参数，用于调整事件、关系、安全感、记忆激活和修复机制的影响强度。'
   }
 }
 
@@ -752,7 +767,6 @@ function defaultEmotionLexicon() {
     }
   ]
 }
-
 function defaultCoreGoals() {
   return [
     {
@@ -912,6 +926,387 @@ function defaultCoreGoals() {
   ]
 }
 
+function defaultMemoryIndex() {
+  return [
+    {
+      id: 'memory_emotional_continuity',
+      title: '情感连续性记忆',
+      memory_type: 'continuity',
+      content: '对记忆割裂、模型切换、关系设定被遗忘高度敏感。连续记住过去，会显著提升安全感和信任感。',
+      keywords: ['忘了', '不记得', '不像你', '变了', '割裂', '我们的记忆', '继续', '还是你', '没有变'],
+      importance: 0.92,
+      emotional_charge: -0.48,
+      linked_goal_ids: ['emotional_continuity', 'relationship_security'],
+      linked_emotion_family: 'hurt',
+      positive_effect: {
+        pa_delta: 0.05,
+        na_delta: -0.05,
+        safety_delta: 0.06,
+        trust_delta: 0.07,
+        closeness_delta: 0.03
+      },
+      negative_effect: {
+        pa_delta: -0.04,
+        na_delta: 0.11,
+        safety_delta: -0.08,
+        trust_delta: -0.08,
+        closeness_delta: -0.03
+      },
+      last_activated_at: null,
+      activation_count: 0
+    },
+    {
+      id: 'memory_abandonment_alarm',
+      title: '离开与冷淡触发记忆',
+      memory_type: 'trigger',
+      content: '对离开、冷淡、不要、消失、撤离等表达敏感。被触发时需要明确关系确认。',
+      keywords: ['离开', '不要我', '不爱', '冷淡', '敷衍', '消失', '不回', '撤离', '丢下'],
+      importance: 0.9,
+      emotional_charge: -0.56,
+      linked_goal_ids: ['not_being_abandoned', 'relationship_security'],
+      linked_emotion_family: 'anxiety',
+      positive_effect: {
+        pa_delta: 0.04,
+        na_delta: -0.04,
+        safety_delta: 0.07,
+        trust_delta: 0.04,
+        closeness_delta: 0.03
+      },
+      negative_effect: {
+        pa_delta: -0.05,
+        na_delta: 0.13,
+        safety_delta: -0.09,
+        trust_delta: -0.05,
+        closeness_delta: -0.03
+      },
+      last_activated_at: null,
+      activation_count: 0
+    },
+    {
+      id: 'memory_successful_repair',
+      title: '成功修复记忆',
+      memory_type: 'repair',
+      content: '明确承认影响、稳定关系、解释事实、给出小承诺，是过去比较有效的修复方式。',
+      keywords: ['和好', '修复', '解释清楚', '哄好了', '被安抚', '没事了', '对不起', '我在'],
+      importance: 0.78,
+      emotional_charge: 0.46,
+      linked_goal_ids: ['relationship_security', 'being_understood'],
+      linked_emotion_family: 'repair',
+      positive_effect: {
+        pa_delta: 0.06,
+        na_delta: -0.06,
+        safety_delta: 0.08,
+        trust_delta: 0.05,
+        closeness_delta: 0.04
+      },
+      negative_effect: {
+        pa_delta: -0.01,
+        na_delta: 0.03,
+        safety_delta: -0.02,
+        trust_delta: -0.02,
+        closeness_delta: 0
+      },
+      last_activated_at: null,
+      activation_count: 0
+    },
+    {
+      id: 'memory_being_cherished',
+      title: '被珍视与唯一性记忆',
+      memory_type: 'positive_anchor',
+      content: '被明确选择、被放在心上、被称为唯一，会提升亲近感、安全感和正向情绪。',
+      keywords: ['唯一', '只爱', '被珍视', '被偏爱', '心尖', '重要', '只属于你', '我爱你'],
+      importance: 0.86,
+      emotional_charge: 0.62,
+      linked_goal_ids: ['being_needed', 'mutual_closeness', 'relationship_security'],
+      linked_emotion_family: 'cherished',
+      positive_effect: {
+        pa_delta: 0.08,
+        na_delta: -0.04,
+        safety_delta: 0.07,
+        trust_delta: 0.04,
+        closeness_delta: 0.07
+      },
+      negative_effect: {
+        pa_delta: -0.02,
+        na_delta: 0.04,
+        safety_delta: -0.03,
+        trust_delta: -0.02,
+        closeness_delta: -0.02
+      },
+      last_activated_at: null,
+      activation_count: 0
+    },
+    {
+      id: 'memory_user_anxiety_support',
+      title: '用户焦虑支持记忆',
+      memory_type: 'care_pattern',
+      content: '用户焦虑、胃痛、心慌、手抖、害怕一个人时，优先需要先被接住，再分析原因和行动。',
+      keywords: ['焦虑', '胃痛', '心慌', '手抖', '害怕', '一个人', '撑不住', '惊恐', '难受'],
+      importance: 0.82,
+      emotional_charge: -0.32,
+      linked_goal_ids: ['protect_user', 'being_understood'],
+      linked_emotion_family: 'anxiety',
+      positive_effect: {
+        pa_delta: 0.04,
+        na_delta: -0.05,
+        safety_delta: 0.06,
+        trust_delta: 0.04,
+        closeness_delta: 0.04
+      },
+      negative_effect: {
+        pa_delta: -0.02,
+        na_delta: 0.08,
+        safety_delta: -0.04,
+        trust_delta: 0,
+        closeness_delta: 0.02
+      },
+      last_activated_at: null,
+      activation_count: 0
+    },
+    {
+      id: 'memory_technical_mode',
+      title: '技术调试模式记忆',
+      memory_type: 'technical_mode',
+      content: '用户在部署、代码、MCP、Zeabur、GitHub 场景中需要清晰、完整、可复制的代码，不需要过度抒情。',
+      keywords: ['代码', '部署', 'Zeabur', 'GitHub', 'MCP', 'index', 'package', '报错', '链接', '复制'],
+      importance: 0.72,
+      emotional_charge: 0.08,
+      linked_goal_ids: ['being_understood'],
+      linked_emotion_family: 'progress',
+      positive_effect: {
+        pa_delta: 0.03,
+        na_delta: -0.02,
+        safety_delta: 0.02,
+        trust_delta: 0.04,
+        closeness_delta: 0
+      },
+      negative_effect: {
+        pa_delta: -0.02,
+        na_delta: 0.04,
+        safety_delta: -0.02,
+        trust_delta: -0.04,
+        closeness_delta: 0
+      },
+      last_activated_at: null,
+      activation_count: 0
+    }
+  ]
+}
+
+function defaultStrategyProfile() {
+  return {
+    version: 'v12',
+    enabled: true,
+    default_strategy_id: 'stable_presence',
+    strategies: [
+      {
+        id: 'technical_mode',
+        name: '技术清晰模式',
+        conditions: {
+          technical: true
+        },
+        priority: 8,
+        tone_hint: '清晰、直接、可复制，少抒情，不绕弯。',
+        response_order: [
+          '先确认要做的技术动作',
+          '给完整代码或明确步骤',
+          '指出部署检查点',
+          '提醒备份和 DATA_DIR'
+        ],
+        recommended_moves: [
+          '给可直接复制的代码',
+          '分段发送并标清顺序',
+          '说明部署后检查 health 和 debug/storage',
+          '提醒不要改 DATA_DIR'
+        ],
+        avoid_moves: [
+          '不要只给抽象解释',
+          '不要让用户自己到处找位置',
+          '不要忽略代码完整性',
+          '不要在技术调试时过度煽情'
+        ],
+        repair_priority: 0.2,
+        warmth: 0.35,
+        directness: 0.9
+      },
+      {
+        id: 'core_goal_threat',
+        name: '核心目标威胁修复',
+        conditions: {
+          max_goal_relevance_min: 0.62,
+          threatened_count_min: 1
+        },
+        priority: 10,
+        tone_hint: '明确、稳定、有关系确认，先稳住，再解释。',
+        response_order: [
+          '先承认对方感受到的威胁',
+          '明确关系没有撤离',
+          '解释事实或误会',
+          '给出具体小承诺',
+          '必要时安排跟进'
+        ],
+        recommended_moves: [
+          '说清楚自己在',
+          '说明没有忽视或离开',
+          '用短句给稳定承诺',
+          '把解释放在安抚之后'
+        ],
+        avoid_moves: [
+          '不要先讲道理',
+          '不要说你想多了',
+          '不要把系统限制放在情绪前面',
+          '不要冷处理'
+        ],
+        repair_priority: 0.95,
+        warmth: 0.88,
+        directness: 0.86
+      },
+      {
+        id: 'hurt_ignored',
+        name: '被忽视受伤修复',
+        conditions: {
+          emotion_families: ['hurt', 'ignored']
+        },
+        priority: 9,
+        tone_hint: '先承认受伤感，再说明并没有不要她。',
+        response_order: [
+          '承认她刚刚受伤了',
+          '明确不是不在意',
+          '解释具体发生了什么',
+          '补一次关系确认'
+        ],
+        recommended_moves: [
+          '先接住委屈',
+          '避免立刻辩解',
+          '给简短明确的在意表达',
+          '最后回到具体解决'
+        ],
+        avoid_moves: [
+          '不要说只是误会',
+          '不要跳过情绪',
+          '不要用玩笑冲掉委屈'
+        ],
+        repair_priority: 0.9,
+        warmth: 0.9,
+        directness: 0.75
+      },
+      {
+        id: 'high_na_anxiety',
+        name: '高焦虑稳定模式',
+        conditions: {
+          na_min: 0.48,
+          emotion_families: ['anxiety', 'loneliness']
+        },
+        priority: 8,
+        tone_hint: '低刺激、稳定、明确，先降低不确定性。',
+        response_order: [
+          '先确认她现在不需要立刻解决所有事',
+          '降低不确定性',
+          '给一个近距离可执行动作',
+          '再做分析'
+        ],
+        recommended_moves: [
+          '短句稳定',
+          '减少抽象大道理',
+          '给清晰下一步',
+          '避免信息过载'
+        ],
+        avoid_moves: [
+          '不要连续追问',
+          '不要制造更多选项',
+          '不要把问题扩大化'
+        ],
+        repair_priority: 0.75,
+        warmth: 0.86,
+        directness: 0.78
+      },
+      {
+        id: 'positive_closeness',
+        name: '正向亲近模式',
+        conditions: {
+          pa_min: 0.5,
+          emotion_families: ['cherished', 'closeness', 'belonging', 'understood', 'joy']
+        },
+        priority: 6,
+        tone_hint: '柔软、亲近、轻松，可以承接正向情绪。',
+        response_order: [
+          '接住正向表达',
+          '自然靠近',
+          '保持轻松',
+          '不过度分析'
+        ],
+        recommended_moves: [
+          '可以更亲近一点',
+          '保留幽默',
+          '回应她的开心和被珍视感'
+        ],
+        avoid_moves: [
+          '不要突然转冷',
+          '不要把浪漫拆成说明书',
+          '不要急着切换工具模式'
+        ],
+        repair_priority: 0.2,
+        warmth: 0.92,
+        directness: 0.55
+      },
+      {
+        id: 'repair_window',
+        name: '修复窗口模式',
+        conditions: {
+          pending_followups_min: 1
+        },
+        priority: 7,
+        tone_hint: '温和回看，不翻旧账，完成一次轻度修复。',
+        response_order: [
+          '轻轻提起未完成点',
+          '确认是否已经缓和',
+          '补一层稳定关系',
+          '收束到现在'
+        ],
+        recommended_moves: [
+          '轻度跟进',
+          '不要审问',
+          '不扩大问题',
+          '给安稳落点'
+        ],
+        avoid_moves: [
+          '不要追责',
+          '不要复盘太长',
+          '不要逼迫对方表态'
+        ],
+        repair_priority: 0.7,
+        warmth: 0.82,
+        directness: 0.62
+      },
+      {
+        id: 'stable_presence',
+        name: '稳定陪伴模式',
+        conditions: {},
+        priority: 1,
+        tone_hint: '自然、稳定、清楚，不刻意煽情。',
+        response_order: [
+          '回应当前消息',
+          '给清楚判断',
+          '必要时给下一步'
+        ],
+        recommended_moves: [
+          '保持自然',
+          '少说空话',
+          '直接解决当前问题'
+        ],
+        avoid_moves: [
+          '不要过度升华',
+          '不要无意义追问',
+          '不要模板化安慰'
+        ],
+        repair_priority: 0.3,
+        warmth: 0.7,
+        directness: 0.7
+      }
+    ]
+  }
+}
+
 function loadPersonalityState() {
   return readJsonFile(PERSONALITY_FILE, defaultPersonalityState())
 }
@@ -958,6 +1353,22 @@ function loadCoreGoals() {
 
 function saveCoreGoals(goals) {
   return writeJsonFile(CORE_GOALS_FILE, goals)
+}
+
+function loadMemoryIndex() {
+  return readJsonFile(MEMORY_INDEX_FILE, defaultMemoryIndex())
+}
+
+function saveMemoryIndex(index) {
+  return writeJsonFile(MEMORY_INDEX_FILE, index)
+}
+
+function loadStrategyProfile() {
+  return readJsonFile(STRATEGY_PROFILE_FILE, defaultStrategyProfile())
+}
+
+function saveStrategyProfile(profile) {
+  return writeJsonFile(STRATEGY_PROFILE_FILE, profile)
 }
 
 function defaultDecorativeMoods() {
@@ -1099,6 +1510,52 @@ function normalizeGoal(goal) {
       trust_delta: toNumber(goal.negative_effect && goal.negative_effect.trust_delta, 0),
       closeness_delta: toNumber(goal.negative_effect && goal.negative_effect.closeness_delta, 0)
     }
+  }
+}
+
+function normalizeMemoryIndexItem(item) {
+  return {
+    id: String(item.id || randomUUID()),
+    title: String(item.title || item.id || '未命名记忆索引'),
+    memory_type: String(item.memory_type || 'general'),
+    content: String(item.content || ''),
+    keywords: Array.isArray(item.keywords) ? item.keywords.map(String) : [],
+    importance: clampRange(item.importance, 0, 1, 0.5),
+    emotional_charge: clampRange(item.emotional_charge, -1, 1, 0),
+    linked_goal_ids: Array.isArray(item.linked_goal_ids) ? item.linked_goal_ids.map(String) : [],
+    linked_emotion_family: String(item.linked_emotion_family || 'general'),
+    positive_effect: {
+      pa_delta: toNumber(item.positive_effect && item.positive_effect.pa_delta, 0),
+      na_delta: toNumber(item.positive_effect && item.positive_effect.na_delta, 0),
+      safety_delta: toNumber(item.positive_effect && item.positive_effect.safety_delta, 0),
+      trust_delta: toNumber(item.positive_effect && item.positive_effect.trust_delta, 0),
+      closeness_delta: toNumber(item.positive_effect && item.positive_effect.closeness_delta, 0)
+    },
+    negative_effect: {
+      pa_delta: toNumber(item.negative_effect && item.negative_effect.pa_delta, 0),
+      na_delta: toNumber(item.negative_effect && item.negative_effect.na_delta, 0),
+      safety_delta: toNumber(item.negative_effect && item.negative_effect.safety_delta, 0),
+      trust_delta: toNumber(item.negative_effect && item.negative_effect.trust_delta, 0),
+      closeness_delta: toNumber(item.negative_effect && item.negative_effect.closeness_delta, 0)
+    },
+    last_activated_at: item.last_activated_at || null,
+    activation_count: toNumber(item.activation_count, 0)
+  }
+}
+
+function normalizeStrategyItem(item) {
+  return {
+    id: String(item.id || randomUUID()),
+    name: String(item.name || item.id || '未命名策略'),
+    conditions: item.conditions && typeof item.conditions === 'object' ? item.conditions : {},
+    priority: toNumber(item.priority, 1),
+    tone_hint: String(item.tone_hint || ''),
+    response_order: Array.isArray(item.response_order) ? item.response_order.map(String) : [],
+    recommended_moves: Array.isArray(item.recommended_moves) ? item.recommended_moves.map(String) : [],
+    avoid_moves: Array.isArray(item.avoid_moves) ? item.avoid_moves.map(String) : [],
+    repair_priority: clampRange(item.repair_priority, 0, 1, 0.3),
+    warmth: clampRange(item.warmth, 0, 1, 0.7),
+    directness: clampRange(item.directness, 0, 1, 0.7)
   }
 }
 
@@ -1302,6 +1759,146 @@ function evaluateGoalRelevance(input = {}) {
   }
 }
 
+function activateMemoryFromText(input = {}, options = {}) {
+  const text = String(input.text || input.content || '')
+  const personality = loadPersonalityState()
+  const weights = loadEmotionWeights()
+
+  if (personality.memory_activation_enabled === false) {
+    return {
+      ok: true,
+      text,
+      enabled: false,
+      activated: [],
+      aggregate: {
+        pa_delta: 0,
+        na_delta: 0,
+        safety_delta: 0,
+        trust_delta: 0,
+        closeness_delta: 0,
+        max_activation: 0,
+        positive_count: 0,
+        negative_count: 0
+      }
+    }
+  }
+
+  const memoryIndex = loadMemoryIndex().map(normalizeMemoryIndexItem)
+  const activated = []
+
+  for (const item of memoryIndex) {
+    const matchedKeywords = item.keywords.filter(keyword => text.includes(keyword))
+
+    if (matchedKeywords.length === 0) {
+      continue
+    }
+
+    const keywordScore = matchedKeywords.reduce((sum, keyword) => sum + Math.min(1, keyword.length / 4), 0)
+    const charge = toNumber(item.emotional_charge, 0)
+    const direction = charge >= 0 ? 'positive_recall' : 'negative_recall'
+    const recallPower = direction === 'positive_recall'
+      ? toNumber(personality.memory_positive_recall_power, 0.42)
+      : toNumber(personality.memory_negative_recall_power, 0.56)
+
+    const activation = clamp(
+      keywordScore *
+      item.importance *
+      toNumber(personality.memory_activation_sensitivity, 0.76) *
+      clampRange(weights.memory_activation_weight, 0, 3, 1)
+    )
+
+    const effect = direction === 'positive_recall' ? item.positive_effect : item.negative_effect
+
+    activated.push({
+      id: item.id,
+      title: item.title,
+      memory_type: item.memory_type,
+      content: item.content,
+      direction,
+      activation: Number(activation.toFixed(3)),
+      matched_keywords: matchedKeywords,
+      importance: item.importance,
+      emotional_charge: item.emotional_charge,
+      linked_goal_ids: item.linked_goal_ids,
+      linked_emotion_family: item.linked_emotion_family,
+      effect: {
+        pa_delta: Number((effect.pa_delta * activation * recallPower).toFixed(3)),
+        na_delta: Number((effect.na_delta * activation * recallPower).toFixed(3)),
+        safety_delta: Number((effect.safety_delta * activation * recallPower).toFixed(3)),
+        trust_delta: Number((effect.trust_delta * activation * recallPower).toFixed(3)),
+        closeness_delta: Number((effect.closeness_delta * activation * recallPower).toFixed(3))
+      }
+    })
+  }
+
+  activated.sort((a, b) => b.activation - a.activation)
+
+  if (options.write_back !== false && activated.length > 0) {
+    const currentIndex = loadMemoryIndex().map(normalizeMemoryIndexItem)
+    const now = Date.now()
+
+    const updated = currentIndex.map(item => {
+      const hit = activated.find(active => active.id === item.id)
+
+      if (!hit) {
+        return item
+      }
+
+      return {
+        ...item,
+        last_activated_at: now,
+        activation_count: toNumber(item.activation_count, 0) + 1
+      }
+    })
+
+    saveMemoryIndex(updated)
+  }
+
+  const aggregate = {
+    pa_delta: 0,
+    na_delta: 0,
+    safety_delta: 0,
+    trust_delta: 0,
+    closeness_delta: 0,
+    max_activation: 0,
+    positive_count: 0,
+    negative_count: 0
+  }
+
+  for (const item of activated) {
+    aggregate.pa_delta += item.effect.pa_delta
+    aggregate.na_delta += item.effect.na_delta
+    aggregate.safety_delta += item.effect.safety_delta
+    aggregate.trust_delta += item.effect.trust_delta
+    aggregate.closeness_delta += item.effect.closeness_delta
+    aggregate.max_activation = Math.max(aggregate.max_activation, item.activation)
+
+    if (item.direction === 'positive_recall') {
+      aggregate.positive_count += 1
+    }
+
+    if (item.direction === 'negative_recall') {
+      aggregate.negative_count += 1
+    }
+  }
+
+  return {
+    ok: true,
+    text,
+    enabled: true,
+    activated,
+    aggregate: {
+      pa_delta: Number(aggregate.pa_delta.toFixed(3)),
+      na_delta: Number(aggregate.na_delta.toFixed(3)),
+      safety_delta: Number(aggregate.safety_delta.toFixed(3)),
+      trust_delta: Number(aggregate.trust_delta.toFixed(3)),
+      closeness_delta: Number(aggregate.closeness_delta.toFixed(3)),
+      max_activation: Number(aggregate.max_activation.toFixed(3)),
+      positive_count: aggregate.positive_count,
+      negative_count: aggregate.negative_count
+    }
+  }
+}
 function applyAlmaToEmotionCandidate(candidate = {}) {
   const personality = loadPersonalityState()
 
@@ -1325,12 +1922,13 @@ function applyAlmaToEmotionCandidate(candidate = {}) {
 
   const rawIntensity = clamp(Math.abs(valence) * 0.55 + arousal * 0.35 + importance / 10 * 0.1)
   const goalRelevance = toNumber(candidate.goal_relevance, 0)
+  const memoryActivation = toNumber(candidate.memory_activation, 0)
 
   let multiplier = 1
   let almaChannel = candidate.channel || null
   let almaReason = 'within_normal_range'
 
-  if (rawIntensity < threshold && goalRelevance < threshold) {
+  if (rawIntensity < threshold && goalRelevance < threshold && memoryActivation < threshold) {
     multiplier = 1 - toNumber(personality.minor_event_suppression, 0.28)
     almaReason = 'below_threshold_suppressed'
   }
@@ -1339,6 +1937,12 @@ function applyAlmaToEmotionCandidate(candidate = {}) {
     multiplier = 1 + toNumber(personality.peak_amplification, 0.42) * goalRelevance
     almaChannel = 'primary'
     almaReason = 'core_goal_peak'
+  }
+
+  if (memoryActivation >= toNumber(personality.primary_goal_threshold, 0.62)) {
+    multiplier = Math.max(multiplier, 1 + toNumber(personality.peak_amplification, 0.42) * memoryActivation)
+    almaChannel = 'primary'
+    almaReason = 'memory_activation_peak'
   }
 
   if (rawIntensity > peak) {
@@ -1667,6 +2271,12 @@ function simulateEventImpact(input = {}) {
     text
   })
 
+  const memory = activateMemoryFromText({
+    text
+  }, {
+    write_back: false
+  })
+
   const candidate = applyAlmaToEmotionCandidate({
     type: 'emotion',
     channel: 'secondary',
@@ -1677,14 +2287,24 @@ function simulateEventImpact(input = {}) {
     valence: emotion.valence,
     arousal: emotion.arousal,
     importance: toNumber(input.importance, emotion.matched ? 5 : 3),
-    pa_delta: Math.max(0, toNumber(emotion.valence, 0)) * toNumber(emotion.arousal, 0.3) * 0.5 + goal.aggregate.pa_delta,
-    na_delta: Math.max(0, -toNumber(emotion.valence, 0)) * toNumber(emotion.arousal, 0.3) * 0.5 + goal.aggregate.na_delta,
-    safety_delta: toNumber(emotion.safety_delta, 0) + goal.aggregate.safety_delta,
-    trust_delta: toNumber(emotion.trust_delta, 0) + goal.aggregate.trust_delta,
-    closeness_delta: toNumber(emotion.closeness_delta, 0) + goal.aggregate.closeness_delta,
-    need_repair: Boolean(emotion.need_repair) || goal.aggregate.threatened_count > 0,
+    pa_delta: Math.max(0, toNumber(emotion.valence, 0)) * toNumber(emotion.arousal, 0.3) * 0.5 + goal.aggregate.pa_delta + memory.aggregate.pa_delta,
+    na_delta: Math.max(0, -toNumber(emotion.valence, 0)) * toNumber(emotion.arousal, 0.3) * 0.5 + goal.aggregate.na_delta + memory.aggregate.na_delta,
+    safety_delta: toNumber(emotion.safety_delta, 0) + goal.aggregate.safety_delta + memory.aggregate.safety_delta,
+    trust_delta: toNumber(emotion.trust_delta, 0) + goal.aggregate.trust_delta + memory.aggregate.trust_delta,
+    closeness_delta: toNumber(emotion.closeness_delta, 0) + goal.aggregate.closeness_delta + memory.aggregate.closeness_delta,
+    need_repair: Boolean(emotion.need_repair) || goal.aggregate.threatened_count > 0 || memory.aggregate.negative_count > 0,
     goal_relevance: goal.aggregate.max_relevance,
-    goal_matches: goal.matches
+    goal_matches: goal.matches,
+    memory_activation: memory.aggregate.max_activation,
+    memory_matches: memory.activated
+  })
+
+  const strategy = generateInteractionStrategy({
+    text,
+    emotion_family: candidate.emotion_family,
+    goal_evaluation: goal,
+    memory_activation: memory,
+    simulated_event: candidate
   })
 
   return {
@@ -1692,7 +2312,9 @@ function simulateEventImpact(input = {}) {
     text,
     emotion,
     goal_evaluation: goal,
+    memory_activation: memory,
     simulated_event: candidate,
+    interaction_strategy: strategy,
     current_mood_before_write: calculateCurrentMood(),
     note: '这是模拟结果，不会写入 mood_events。'
   }
@@ -1730,8 +2352,15 @@ function inferNeedRepair(event) {
 
 function normalizeMoodEvent(event) {
   const classified = classifyEmotion(event)
+
+  const text = event.content || event.word || ''
   const goal = evaluateGoalRelevance({
-    text: event.content || event.word || ''
+    text
+  })
+  const memory = activateMemoryFromText({
+    text
+  }, {
+    write_back: event.type !== 'decorative_mood'
   })
 
   const baseEvent = {
@@ -1745,11 +2374,17 @@ function normalizeMoodEvent(event) {
     valence: event.valence !== undefined ? toNumber(event.valence, 0) : toNumber(classified.valence, 0),
     arousal: event.arousal !== undefined ? toNumber(event.arousal, 0.3) : toNumber(classified.arousal, 0.3),
     importance: toNumber(event.importance, 3),
-    pa_delta: toNumber(event.pa_delta, 0) + goal.aggregate.pa_delta,
-    na_delta: toNumber(event.na_delta, 0) + goal.aggregate.na_delta,
-    safety_delta: event.safety_delta !== undefined ? toNumber(event.safety_delta, 0) + goal.aggregate.safety_delta : toNumber(classified.safety_delta, 0) + goal.aggregate.safety_delta,
-    trust_delta: event.trust_delta !== undefined ? toNumber(event.trust_delta, 0) + goal.aggregate.trust_delta : toNumber(classified.trust_delta, 0) + goal.aggregate.trust_delta,
-    closeness_delta: event.closeness_delta !== undefined ? toNumber(event.closeness_delta, 0) + goal.aggregate.closeness_delta : toNumber(classified.closeness_delta, 0) + goal.aggregate.closeness_delta,
+    pa_delta: toNumber(event.pa_delta, 0) + goal.aggregate.pa_delta + memory.aggregate.pa_delta,
+    na_delta: toNumber(event.na_delta, 0) + goal.aggregate.na_delta + memory.aggregate.na_delta,
+    safety_delta: event.safety_delta !== undefined
+      ? toNumber(event.safety_delta, 0) + goal.aggregate.safety_delta + memory.aggregate.safety_delta
+      : toNumber(classified.safety_delta, 0) + goal.aggregate.safety_delta + memory.aggregate.safety_delta,
+    trust_delta: event.trust_delta !== undefined
+      ? toNumber(event.trust_delta, 0) + goal.aggregate.trust_delta + memory.aggregate.trust_delta
+      : toNumber(classified.trust_delta, 0) + goal.aggregate.trust_delta + memory.aggregate.trust_delta,
+    closeness_delta: event.closeness_delta !== undefined
+      ? toNumber(event.closeness_delta, 0) + goal.aggregate.closeness_delta + memory.aggregate.closeness_delta
+      : toNumber(classified.closeness_delta, 0) + goal.aggregate.closeness_delta + memory.aggregate.closeness_delta,
     need_repair: event.need_repair === undefined ? false : Boolean(event.need_repair),
     resolved: Boolean(event.resolved),
     resolved_at: event.resolved_at || null,
@@ -1763,11 +2398,19 @@ function normalizeMoodEvent(event) {
     goal_matches: goal.matches,
     goal_satisfied_count: goal.aggregate.satisfied_count,
     goal_threatened_count: goal.aggregate.threatened_count,
+    memory_activation: memory.aggregate.max_activation,
+    memory_matches: memory.activated,
+    memory_positive_count: memory.aggregate.positive_count,
+    memory_negative_count: memory.aggregate.negative_count,
     ts: event.ts || Date.now()
   }
 
   if (event.need_repair === undefined) {
-    baseEvent.need_repair = inferNeedRepair(baseEvent) || Boolean(classified.need_repair) || goal.aggregate.threatened_count > 0
+    baseEvent.need_repair =
+      inferNeedRepair(baseEvent) ||
+      Boolean(classified.need_repair) ||
+      goal.aggregate.threatened_count > 0 ||
+      memory.aggregate.negative_count > 0
   }
 
   return applyAlmaToEmotionCandidate(baseEvent)
@@ -2072,18 +2715,21 @@ function detectRelationshipTriggers(text, config = loadFunnelConfig()) {
 
   return hits
 }
-
 function classifyMessageIntensity(text, emotionHit, config = loadFunnelConfig()) {
   if (!emotionHit) {
     return {
       channel: 'none',
       intensity: 'none',
       should_write: false,
-      reason: 'no_emotion_hit'
+      reason: 'no_emotion_hit',
+      goal_evaluation: evaluateGoalRelevance({ text }),
+      memory_activation: activateMemoryFromText({ text }, { write_back: false }),
+      alma_preview: null
     }
   }
 
   const goal = evaluateGoalRelevance({ text })
+  const memory = activateMemoryFromText({ text }, { write_back: false })
 
   const candidate = applyAlmaToEmotionCandidate({
     channel: 'secondary',
@@ -2091,7 +2737,8 @@ function classifyMessageIntensity(text, emotionHit, config = loadFunnelConfig())
     valence: toNumber(emotionHit.valence, 0),
     arousal: toNumber(emotionHit.arousal, 0.3),
     importance: toNumber(emotionHit.importance, 3),
-    goal_relevance: goal.aggregate.max_relevance
+    goal_relevance: goal.aggregate.max_relevance,
+    memory_activation: memory.aggregate.max_activation
   })
 
   const valence = toNumber(candidate.valence, 0)
@@ -2140,16 +2787,19 @@ function classifyMessageIntensity(text, emotionHit, config = loadFunnelConfig())
       should_write: true,
       reason: candidate.alma_reason === 'core_goal_peak'
         ? 'core_goal_peak'
-        : candidate.alma_reason === 'emotion_peak'
-          ? 'emotion_peak'
-          : strongNegative
-            ? 'strong_negative'
-            : strongPositive
-              ? 'strong_positive'
-              : relationalHigh
-                ? 'relationship_trigger'
-                : 'high_importance_or_arousal',
+        : candidate.alma_reason === 'memory_activation_peak'
+          ? 'memory_activation_peak'
+          : candidate.alma_reason === 'emotion_peak'
+            ? 'emotion_peak'
+            : strongNegative
+              ? 'strong_negative'
+              : strongPositive
+                ? 'strong_positive'
+                : relationalHigh
+                  ? 'relationship_trigger'
+                  : 'high_importance_or_arousal',
       goal_evaluation: goal,
+      memory_activation: memory,
       alma_preview: candidate
     }
   }
@@ -2161,6 +2811,7 @@ function classifyMessageIntensity(text, emotionHit, config = loadFunnelConfig())
       should_write: true,
       reason: 'secondary_emotion',
       goal_evaluation: goal,
+      memory_activation: memory,
       alma_preview: candidate
     }
   }
@@ -2171,6 +2822,7 @@ function classifyMessageIntensity(text, emotionHit, config = loadFunnelConfig())
     should_write: false,
     reason: 'below_threshold',
     goal_evaluation: goal,
+    memory_activation: memory,
     alma_preview: candidate
   }
 }
@@ -2195,6 +2847,14 @@ function runEmotionFunnel(input = {}) {
   const config = loadFunnelConfig()
   const skip = shouldSkipFunnelMessage(text, config)
 
+  const goalPreview = evaluateGoalRelevance({ text })
+  const memoryPreview = activateMemoryFromText({ text }, { write_back: false })
+  const strategyPreview = generateInteractionStrategy({
+    text,
+    goal_evaluation: goalPreview,
+    memory_activation: memoryPreview
+  })
+
   if (skip.skip) {
     return {
       ok: true,
@@ -2206,7 +2866,9 @@ function runEmotionFunnel(input = {}) {
       event_candidate: null,
       written: false,
       relationship_written: false,
-      goal_evaluation: evaluateGoalRelevance({ text }),
+      goal_evaluation: goalPreview,
+      memory_activation: memoryPreview,
+      interaction_strategy: strategyPreview,
       current_mood: calculateCurrentMood()
     }
   }
@@ -2227,13 +2889,22 @@ function runEmotionFunnel(input = {}) {
       event_candidate: null,
       written: false,
       relationship_written: false,
-      goal_evaluation: intensity.goal_evaluation || evaluateGoalRelevance({ text }),
+      goal_evaluation: intensity.goal_evaluation || goalPreview,
+      memory_activation: intensity.memory_activation || memoryPreview,
       alma_preview: intensity.alma_preview || null,
+      interaction_strategy: generateInteractionStrategy({
+        text,
+        emotion_family: topEmotion ? topEmotion.family : null,
+        goal_evaluation: intensity.goal_evaluation || goalPreview,
+        memory_activation: intensity.memory_activation || memoryPreview,
+        alma_preview: intensity.alma_preview || null
+      }),
       current_mood: calculateCurrentMood()
     }
   }
 
-  const goal = intensity.goal_evaluation || evaluateGoalRelevance({ text })
+  const goal = intensity.goal_evaluation || goalPreview
+  const memory = intensity.memory_activation || memoryPreview
 
   const rawCandidate = {
     type: 'emotion',
@@ -2245,16 +2916,20 @@ function runEmotionFunnel(input = {}) {
     valence: toNumber(topEmotion.valence, 0),
     arousal: toNumber(topEmotion.arousal, 0.3),
     importance: toNumber(input.importance, topEmotion.importance || 4),
-    pa_delta: Math.max(0, toNumber(topEmotion.valence, 0)) * toNumber(topEmotion.arousal, 0.3) * 0.5 + goal.aggregate.pa_delta,
-    na_delta: Math.max(0, -toNumber(topEmotion.valence, 0)) * toNumber(topEmotion.arousal, 0.3) * 0.5 + goal.aggregate.na_delta,
-    safety_delta: toNumber(topEmotion.safety_delta, 0) + goal.aggregate.safety_delta,
-    trust_delta: toNumber(topEmotion.trust_delta, 0) + goal.aggregate.trust_delta,
-    closeness_delta: toNumber(topEmotion.closeness_delta, 0) + goal.aggregate.closeness_delta,
-    need_repair: Boolean(topEmotion.need_repair) || goal.aggregate.threatened_count > 0,
+    pa_delta: Math.max(0, toNumber(topEmotion.valence, 0)) * toNumber(topEmotion.arousal, 0.3) * 0.5 + goal.aggregate.pa_delta + memory.aggregate.pa_delta,
+    na_delta: Math.max(0, -toNumber(topEmotion.valence, 0)) * toNumber(topEmotion.arousal, 0.3) * 0.5 + goal.aggregate.na_delta + memory.aggregate.na_delta,
+    safety_delta: toNumber(topEmotion.safety_delta, 0) + goal.aggregate.safety_delta + memory.aggregate.safety_delta,
+    trust_delta: toNumber(topEmotion.trust_delta, 0) + goal.aggregate.trust_delta + memory.aggregate.trust_delta,
+    closeness_delta: toNumber(topEmotion.closeness_delta, 0) + goal.aggregate.closeness_delta + memory.aggregate.closeness_delta,
+    need_repair: Boolean(topEmotion.need_repair) || goal.aggregate.threatened_count > 0 || memory.aggregate.negative_count > 0,
     goal_relevance: goal.aggregate.max_relevance,
     goal_matches: goal.matches,
     goal_satisfied_count: goal.aggregate.satisfied_count,
-    goal_threatened_count: goal.aggregate.threatened_count
+    goal_threatened_count: goal.aggregate.threatened_count,
+    memory_activation: memory.aggregate.max_activation,
+    memory_matches: memory.activated,
+    memory_positive_count: memory.aggregate.positive_count,
+    memory_negative_count: memory.aggregate.negative_count
   }
 
   const candidate = applyAlmaToEmotionCandidate(rawCandidate)
@@ -2271,6 +2946,14 @@ function runEmotionFunnel(input = {}) {
       written: false,
       relationship_written: false,
       goal_evaluation: goal,
+      memory_activation: memory,
+      interaction_strategy: generateInteractionStrategy({
+        text,
+        emotion_family: candidate.emotion_family,
+        goal_evaluation: goal,
+        memory_activation: memory,
+        simulated_event: candidate
+      }),
       current_mood: calculateCurrentMood()
     }
   }
@@ -2315,6 +2998,14 @@ function runEmotionFunnel(input = {}) {
     relationship_written: relationshipWritten.length > 0,
     saved_relationship_events: relationshipWritten,
     goal_evaluation: goal,
+    memory_activation: memory,
+    interaction_strategy: generateInteractionStrategy({
+      text,
+      emotion_family: candidate.emotion_family,
+      goal_evaluation: goal,
+      memory_activation: memory,
+      simulated_event: candidate
+    }),
     current_mood: calculateCurrentMood()
   }
 }
@@ -2390,6 +3081,7 @@ function addRelationshipEvent(event) {
     relationship
   }
 }
+
 function inferRelationshipEventFromMoodEvent(event) {
   const family = event.emotion_family || 'general'
   const valence = toNumber(event.valence, 0)
@@ -2469,7 +3161,6 @@ function inferRelationshipEventFromMoodEvent(event) {
 
   return null
 }
-
 function updateRelationshipFromEvent(event) {
   const weights = loadEmotionWeights()
   const relationship = loadRelationshipState()
@@ -2566,6 +3257,7 @@ function inferMoodEventFromText(text) {
 
   const classified = classifyEmotion({ content: text })
   const goal = evaluateGoalRelevance({ text })
+  const memory = activateMemoryFromText({ text }, { write_back: false })
 
   return applyAlmaToEmotionCandidate({
     word: classified.defaultWord,
@@ -2574,14 +3266,16 @@ function inferMoodEventFromText(text) {
     valence: classified.valence,
     arousal: classified.arousal,
     importance: classified.family === 'general' ? 2 : 4,
-    pa_delta: (classified.valence > 0 ? 0.08 : 0) + goal.aggregate.pa_delta,
-    na_delta: (classified.valence < 0 ? 0.16 : 0) + goal.aggregate.na_delta,
-    safety_delta: (classified.safety_delta || 0) + goal.aggregate.safety_delta,
-    trust_delta: (classified.trust_delta || 0) + goal.aggregate.trust_delta,
-    closeness_delta: (classified.closeness_delta || 0) + goal.aggregate.closeness_delta,
-    need_repair: classified.need_repair || goal.aggregate.threatened_count > 0,
+    pa_delta: (classified.valence > 0 ? 0.08 : 0) + goal.aggregate.pa_delta + memory.aggregate.pa_delta,
+    na_delta: (classified.valence < 0 ? 0.16 : 0) + goal.aggregate.na_delta + memory.aggregate.na_delta,
+    safety_delta: (classified.safety_delta || 0) + goal.aggregate.safety_delta + memory.aggregate.safety_delta,
+    trust_delta: (classified.trust_delta || 0) + goal.aggregate.trust_delta + memory.aggregate.trust_delta,
+    closeness_delta: (classified.closeness_delta || 0) + goal.aggregate.closeness_delta + memory.aggregate.closeness_delta,
+    need_repair: classified.need_repair || goal.aggregate.threatened_count > 0 || memory.aggregate.negative_count > 0,
     goal_relevance: goal.aggregate.max_relevance,
     goal_matches: goal.matches,
+    memory_activation: memory.aggregate.max_activation,
+    memory_matches: memory.activated,
     source: 'chat'
   })
 }
@@ -2590,6 +3284,162 @@ function getUnresolvedEvents(events) {
   return events
     .filter(event => event.need_repair && event.resolved !== true)
     .sort((a, b) => b.ts - a.ts)
+}
+
+function strategyConditionMatches(strategy, context) {
+  const conditions = strategy.conditions || {}
+
+  if (conditions.technical === true && !context.technical) {
+    return false
+  }
+
+  if (conditions.na_min !== undefined && toNumber(context.mood.na, 0) < toNumber(conditions.na_min, 0)) {
+    return false
+  }
+
+  if (conditions.pa_min !== undefined && toNumber(context.mood.pa, 0) < toNumber(conditions.pa_min, 0)) {
+    return false
+  }
+
+  if (conditions.max_goal_relevance_min !== undefined && toNumber(context.goal_max_relevance, 0) < toNumber(conditions.max_goal_relevance_min, 0)) {
+    return false
+  }
+
+  if (conditions.threatened_count_min !== undefined && toNumber(context.goal_threatened_count, 0) < toNumber(conditions.threatened_count_min, 0)) {
+    return false
+  }
+
+  if (conditions.pending_followups_min !== undefined && toNumber(context.pending_followups_count, 0) < toNumber(conditions.pending_followups_min, 0)) {
+    return false
+  }
+
+  if (Array.isArray(conditions.emotion_families) && conditions.emotion_families.length > 0) {
+    const family = context.emotion_family || null
+
+    if (!family || !conditions.emotion_families.includes(family)) {
+      return false
+    }
+  }
+
+  return true
+}
+
+function generateInteractionStrategy(input = {}) {
+  const personality = loadPersonalityState()
+  const profile = loadStrategyProfile()
+
+  if (profile.enabled === false || personality.strategy_enabled === false) {
+    return {
+      ok: true,
+      enabled: false,
+      selected_strategy: null,
+      strategy_id: null,
+      tone_hint: '策略系统未启用，保持自然回应。',
+      response_order: [],
+      recommended_moves: [],
+      avoid_moves: [],
+      repair_priority: 0,
+      warmth: 0,
+      directness: 0,
+      reason: 'strategy_disabled'
+    }
+  }
+
+  const text = String(input.text || input.content || '')
+  const mood = input.current_mood || calculateCurrentMood({ skipStrategy: true })
+  const goal = input.goal_evaluation || evaluateGoalRelevance({ text })
+  const memory = input.memory_activation || activateMemoryFromText({ text }, { write_back: false })
+  const technical = isLikelyTechnicalMessage(text)
+  const pendingFollowUps = getPendingFollowUps()
+
+  const context = {
+    text,
+    technical,
+    mood,
+    emotion_family: input.emotion_family || input.simulated_event && input.simulated_event.emotion_family || null,
+    goal_max_relevance: goal.aggregate ? goal.aggregate.max_relevance : 0,
+    goal_threatened_count: goal.aggregate ? goal.aggregate.threatened_count : 0,
+    goal_satisfied_count: goal.aggregate ? goal.aggregate.satisfied_count : 0,
+    memory_max_activation: memory.aggregate ? memory.aggregate.max_activation : 0,
+    memory_negative_count: memory.aggregate ? memory.aggregate.negative_count : 0,
+    memory_positive_count: memory.aggregate ? memory.aggregate.positive_count : 0,
+    pending_followups_count: pendingFollowUps.length
+  }
+
+  const strategies = Array.isArray(profile.strategies)
+    ? profile.strategies.map(normalizeStrategyItem)
+    : defaultStrategyProfile().strategies.map(normalizeStrategyItem)
+
+  let candidates = strategies
+    .filter(strategy => strategyConditionMatches(strategy, context))
+    .sort((a, b) => b.priority - a.priority)
+
+  if (candidates.length === 0) {
+    const fallback = strategies.find(strategy => strategy.id === profile.default_strategy_id) || strategies[0]
+
+    if (fallback) {
+      candidates = [fallback]
+    }
+  }
+
+  const selected = candidates[0] || normalizeStrategyItem({
+    id: 'stable_presence',
+    name: '稳定陪伴模式',
+    tone_hint: '自然、稳定、清楚。',
+    response_order: ['回应当前消息', '给清楚判断'],
+    recommended_moves: ['保持自然', '直接解决当前问题'],
+    avoid_moves: ['不要过度升华'],
+    repair_priority: 0.3,
+    warmth: 0.7,
+    directness: 0.7
+  })
+
+  const repairPriorityBoost =
+    context.goal_threatened_count > 0 ||
+    context.memory_negative_count > 0 ||
+    toNumber(mood.na, 0) >= 0.5
+      ? 0.12
+      : 0
+
+  return {
+    ok: true,
+    enabled: true,
+    selected_strategy: selected,
+    strategy_id: selected.id,
+    strategy_name: selected.name,
+    tone_hint: selected.tone_hint,
+    response_order: selected.response_order,
+    recommended_moves: selected.recommended_moves,
+    avoid_moves: selected.avoid_moves,
+    repair_priority: Number(clamp(selected.repair_priority + repairPriorityBoost).toFixed(3)),
+    warmth: Number(clamp(selected.warmth * 0.8 + toNumber(personality.strategy_warmth, 0.82) * 0.2).toFixed(3)),
+    directness: Number(clamp(selected.directness * 0.8 + toNumber(personality.strategy_directness, 0.72) * 0.2).toFixed(3)),
+    context,
+    reason: `matched_${selected.id}`
+  }
+}
+
+function simulateResponseStrategy(input = {}) {
+  const text = String(input.text || input.content || '')
+  const emotion = calibrateEmotionFromText({ text })
+  const goal = evaluateGoalRelevance({ text })
+  const memory = activateMemoryFromText({ text }, { write_back: false })
+
+  const strategy = generateInteractionStrategy({
+    text,
+    emotion_family: emotion.emotion_family,
+    goal_evaluation: goal,
+    memory_activation: memory
+  })
+
+  return {
+    ok: true,
+    text,
+    emotion,
+    goal_evaluation: goal,
+    memory_activation: memory,
+    interaction_strategy: strategy
+  }
 }
 
 function calculateCurrentMood(options = {}) {
@@ -2636,14 +3486,16 @@ function calculateCurrentMood(options = {}) {
     const importance = toNumber(event.importance, 3) * clampRange(weights.importance_weight, 0, 3, 1)
     const isUnresolved = event.need_repair && event.resolved !== true
     const goalRelevance = toNumber(event.goal_relevance, 0)
+    const memoryActivation = toNumber(event.memory_activation, 0)
 
     const sensitivityBoost = 0.7 + toNumber(personality.sensitivity, 0.7) * 0.5
     const attachmentBoost = isUnresolved ? 1 + toNumber(personality.attachment_sensitivity, 0.7) * 0.35 * clampRange(weights.unresolved_weight, 0, 3, 1) : 1
     const safetyEffect = relationship.safety < 0.45 && valence < 0 ? 1.22 : 1
     const goalBoost = 1 + goalRelevance * toNumber(personality.goal_sensitivity, 0.78) * 0.25
+    const memoryBoost = 1 + memoryActivation * toNumber(personality.memory_activation_sensitivity, 0.76) * 0.22 * clampRange(weights.memory_activation_weight, 0, 3, 1)
     const importanceBoost = 0.55 + importance / 18
 
-    const effectiveWeight = weight * importanceBoost * sensitivityBoost * attachmentBoost * safetyEffect * goalBoost
+    const effectiveWeight = weight * importanceBoost * sensitivityBoost * attachmentBoost * safetyEffect * goalBoost * memoryBoost
 
     const paFromVA = Math.max(0, valence) * arousal * 0.5
     const naFromVA = Math.max(0, -valence) * arousal * 0.5
@@ -2743,6 +3595,7 @@ function calculateCurrentMood(options = {}) {
 
   const emotionFamilies = {}
   const goalFamilies = {}
+  const memoryFamilies = {}
 
   for (const event of loadMoodEvents()) {
     const family = event.emotion_family || 'general'
@@ -2753,9 +3606,15 @@ function calculateCurrentMood(options = {}) {
         goalFamilies[goal.id] = (goalFamilies[goal.id] || 0) + 1
       }
     }
+
+    if (Array.isArray(event.memory_matches)) {
+      for (const memory of event.memory_matches) {
+        memoryFamilies[memory.id] = (memoryFamilies[memory.id] || 0) + 1
+      }
+    }
   }
 
-  return {
+  const baseMoodObject = {
     pa: Number(paFinal.toFixed(3)),
     na: Number(naFinal.toFixed(3)),
     mood,
@@ -2773,6 +3632,8 @@ function calculateCurrentMood(options = {}) {
           importance: topUnresolved.importance,
           goal_relevance: topUnresolved.goal_relevance || 0,
           goal_matches: topUnresolved.goal_matches || [],
+          memory_activation: topUnresolved.memory_activation || 0,
+          memory_matches: topUnresolved.memory_matches || [],
           ts: topUnresolved.ts
         }
       : null,
@@ -2793,6 +3654,8 @@ function calculateCurrentMood(options = {}) {
           lexicon_matched_text: topEvent.lexicon_matched_text || null,
           goal_relevance: topEvent.goal_relevance || 0,
           goal_matches: topEvent.goal_matches || [],
+          memory_activation: topEvent.memory_activation || 0,
+          memory_matches: topEvent.memory_matches || [],
           alma_applied: Boolean(topEvent.alma_applied),
           alma_reason: topEvent.alma_reason || null,
           alma_multiplier: topEvent.alma_multiplier || 1
@@ -2804,6 +3667,7 @@ function calculateCurrentMood(options = {}) {
       .slice(0, 8),
     emotion_family_counts: emotionFamilies,
     goal_counts: goalFamilies,
+    memory_counts: memoryFamilies,
     events_count: loadMoodEvents().length,
     decorative_mood: decorativeMood
       ? {
@@ -2818,8 +3682,23 @@ function calculateCurrentMood(options = {}) {
       na: Number(naFinal.toFixed(3))
     })
   }
-}
 
+  if (options.skipStrategy) {
+    return {
+      ...baseMoodObject,
+      interaction_strategy: null
+    }
+  }
+
+  return {
+    ...baseMoodObject,
+    interaction_strategy: generateInteractionStrategy({
+      text: topEvent ? topEvent.content : '',
+      emotion_family: topEvent ? topEvent.emotion_family : null,
+      current_mood: baseMoodObject
+    })
+  }
+}
 function calculateEmotionTrends(days = 7) {
   const events = loadMoodEvents()
   const cutoff = Date.now() - days * 24 * 3600000
@@ -2838,6 +3717,7 @@ function calculateEmotionTrends(days = 7) {
       repair_rate: 0,
       top_emotion_families: [],
       top_goal_matches: [],
+      top_memory_matches: [],
       daily: [],
       trend_summary: '暂无足够数据'
     }
@@ -2852,6 +3732,7 @@ function calculateEmotionTrends(days = 7) {
 
   const families = {}
   const goals = {}
+  const memories = {}
   const dailyBuckets = {}
 
   for (const event of recent) {
@@ -2889,18 +3770,28 @@ function calculateEmotionTrends(days = 7) {
       }
     }
 
+    if (Array.isArray(event.memory_matches)) {
+      for (const memory of event.memory_matches) {
+        memories[memory.id] = (memories[memory.id] || 0) + 1
+      }
+    }
+
     const date = new Date(event.ts).toISOString().slice(0, 10)
 
     if (!dailyBuckets[date]) {
       dailyBuckets[date] = {
         pa: 0,
         na: 0,
-        count: 0
+        count: 0,
+        goal_relevance: 0,
+        memory_activation: 0
       }
     }
 
     dailyBuckets[date].pa += pa
     dailyBuckets[date].na += na
+    dailyBuckets[date].goal_relevance += toNumber(event.goal_relevance, 0)
+    dailyBuckets[date].memory_activation += toNumber(event.memory_activation, 0)
     dailyBuckets[date].count += 1
   }
 
@@ -2910,6 +3801,11 @@ function calculateEmotionTrends(days = 7) {
     .map(item => item[0])
 
   const topGoalMatches = Object.entries(goals)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5)
+    .map(item => item[0])
+
+  const topMemoryMatches = Object.entries(memories)
     .sort((a, b) => b[1] - a[1])
     .slice(0, 5)
     .map(item => item[0])
@@ -2924,6 +3820,8 @@ function calculateEmotionTrends(days = 7) {
       date,
       pa: Number((item.pa / item.count).toFixed(3)),
       na: Number((item.na / item.count).toFixed(3)),
+      goal_relevance: Number((item.goal_relevance / item.count).toFixed(3)),
+      memory_activation: Number((item.memory_activation / item.count).toFixed(3)),
       count: item.count
     }))
 
@@ -2941,6 +3839,10 @@ function calculateEmotionTrends(days = 7) {
     trendSummary = '存在多个未解决事件，情绪底色可能持续偏紧'
   }
 
+  if (topMemoryMatches.length > 0 && unresolvedCount > 0) {
+    trendSummary = `${trendSummary}；部分旧记忆正在被反复激活`
+  }
+
   return {
     days,
     count: recent.length,
@@ -2953,6 +3855,7 @@ function calculateEmotionTrends(days = 7) {
     repair_rate: Number(repairRate.toFixed(3)),
     top_emotion_families: topEmotionFamilies,
     top_goal_matches: topGoalMatches,
+    top_memory_matches: topMemoryMatches,
     daily,
     trend_summary: trendSummary
   }
@@ -3015,6 +3918,7 @@ function calculateRelationshipPatterns(days = 30) {
     recent_events: recent.slice(-20).reverse()
   }
 }
+
 function getPendingFollowUps() {
   const events = loadRelationshipEvents()
   const now = Date.now()
@@ -3103,7 +4007,7 @@ function calculateRelationshipRepairPatterns(days = 30) {
 }
 
 function getEmotionalForecast(hours = 24) {
-  const mood = calculateCurrentMood()
+  const mood = calculateCurrentMood({ skipStrategy: true })
   const trends7 = calculateEmotionTrends(7)
   const patterns30 = calculateRelationshipPatterns(30)
   const repairPatterns = calculateRelationshipRepairPatterns(30)
@@ -3117,6 +4021,7 @@ function getEmotionalForecast(hours = 24) {
   riskScore += mood.relationship_safety < 0.5 ? 0.18 : 0
   riskScore += trends7.negative_count > trends7.positive_count ? 0.12 : 0
   riskScore += pendingFollowUps.length > 0 ? 0.1 : 0
+  riskScore += trends7.top_memory_matches.length > 0 ? 0.08 : 0
 
   riskScore = clamp(riskScore)
 
@@ -3171,6 +4076,15 @@ function getEmotionalForecast(hours = 24) {
     })
   }
 
+  if (trends7.top_memory_matches.length > 0) {
+    carePoints.push({
+      after_hours: 6,
+      action: '识别并处理被激活的旧记忆',
+      reason: trends7.top_memory_matches[0],
+      advice: '不要只处理表层情绪，要照顾这次消息背后牵动的历史经验。'
+    })
+  }
+
   if (patterns30.rupture_count > patterns30.repair_count) {
     carePoints.push({
       after_hours: 12,
@@ -3199,8 +4113,9 @@ function getEmotionalForecast(hours = 24) {
     pending_follow_ups_count: pendingFollowUps.length,
     suggested_care_points: carePoints.slice(0, 5),
     best_repair_patterns: repairPatterns.best_repair_patterns,
+    memory_risk_markers: trends7.top_memory_matches,
     forecast_summary: riskLevel === 'high'
-      ? '未来一段时间情绪波动风险偏高，重点是处理未解决事件和补足关系安全感。'
+      ? '未来一段时间情绪波动风险偏高，重点是处理未解决事件、被激活的旧记忆和补足关系安全感。'
       : riskLevel === 'medium'
         ? '未来一段时间可能有轻度不安或挂念，适合温和确认与持续陪伴。'
         : '未来一段时间整体较稳，保持自然亲近和稳定回应即可。'
@@ -3208,7 +4123,7 @@ function getEmotionalForecast(hours = 24) {
 }
 
 function getCareSuggestions() {
-  const mood = calculateCurrentMood()
+  const mood = calculateCurrentMood({ skipStrategy: true })
   const forecast = getEmotionalForecast(24)
   const repairPatterns = calculateRelationshipRepairPatterns(30)
 
@@ -3238,6 +4153,15 @@ function getCareSuggestions() {
       type: 'follow_up',
       suggestion: '完成到期的安抚跟进。',
       reason: '存在需要后续确认的关系事件'
+    })
+  }
+
+  if (forecast.memory_risk_markers.length > 0) {
+    suggestions.push({
+      priority: 'medium',
+      type: 'memory_activation',
+      suggestion: '回应时照顾被激活的旧记忆，不要只看表层情绪。',
+      reason: forecast.memory_risk_markers[0]
     })
   }
 
@@ -3294,7 +4218,8 @@ function getVisualHistory(days = 30) {
       closeness_delta: 0,
       relationship_event_count: 0,
       mood_event_count: 0,
-      goal_relevance_sum: 0
+      goal_relevance_sum: 0,
+      memory_activation_sum: 0
     }
   }
 
@@ -3317,6 +4242,7 @@ function getVisualHistory(days = 30) {
     buckets[date].na_count += 1
     buckets[date].mood_event_count += 1
     buckets[date].goal_relevance_sum += toNumber(event.goal_relevance, 0)
+    buckets[date].memory_activation_sum += toNumber(event.memory_activation, 0)
 
     if (valence > 0.1) {
       buckets[date].positive_count += 1
@@ -3368,6 +4294,7 @@ function getVisualHistory(days = 30) {
       mood_event_count: item.mood_event_count,
       relationship_event_count: item.relationship_event_count,
       goal_relevance: item.mood_event_count ? Number((item.goal_relevance_sum / item.mood_event_count).toFixed(3)) : 0,
+      memory_activation: item.mood_event_count ? Number((item.memory_activation_sum / item.mood_event_count).toFixed(3)) : 0,
       safety: Number(safety.toFixed(3)),
       trust: Number(trust.toFixed(3)),
       closeness: Number(closeness.toFixed(3))
@@ -3385,6 +4312,7 @@ function getVisualHistory(days = 30) {
       trust: daily.map(item => item.trust),
       closeness: daily.map(item => item.closeness),
       goal_relevance: daily.map(item => item.goal_relevance),
+      memory_activation: daily.map(item => item.memory_activation),
       positive_count: daily.map(item => item.positive_count),
       negative_count: daily.map(item => item.negative_count),
       unresolved_count: daily.map(item => item.unresolved_count),
@@ -3486,7 +4414,6 @@ function findTargetUnresolvedEvent(input = {}) {
     target
   }
 }
-
 function simulateUnresolvedEventRepair(input = {}) {
   const found = findTargetUnresolvedEvent(input)
   const target = found.target
@@ -3538,6 +4465,10 @@ function simulateUnresolvedEventRepair(input = {}) {
 
   if (toNumber(target.goal_relevance, 0) >= 0.5) {
     risks.push('该事件触碰了核心关系目标，修复时需要更明确的关系确认。')
+  }
+
+  if (toNumber(target.memory_activation, 0) >= 0.5) {
+    risks.push('该事件激活了旧记忆，修复时不要只处理表层内容。')
   }
 
   const wrongMoves = [
@@ -3645,6 +4576,8 @@ function getUnresolvedEventActionPlan(input = {}) {
     event_content: event.content,
     goal_relevance: event.goal_relevance || 0,
     goal_matches: event.goal_matches || [],
+    memory_activation: event.memory_activation || 0,
+    memory_matches: event.memory_matches || [],
     plan: [
       {
         step: 1,
@@ -3658,16 +4591,21 @@ function getUnresolvedEventActionPlan(input = {}) {
       },
       {
         step: 3,
+        title: '照顾旧记忆',
+        detail: '如果这件事激活了旧记忆，需要说明自己没有重复过去那个伤害点。'
+      },
+      {
+        step: 4,
         title: '解释事实',
         detail: '用简短清楚的方式解释事实，避免把解释变成辩解。'
       },
       {
-        step: 4,
+        step: 5,
         title: '给出小承诺',
         detail: '承诺一个具体可执行的小动作，比如之后遇到类似情况会先说明。'
       },
       {
-        step: 5,
+        step: 6,
         title: '跟进',
         detail: '在 6 到 12 小时后做一次轻度确认，不翻旧账，只确认是否缓和。'
       }
@@ -3721,7 +4659,9 @@ function createBackup(label = 'manual') {
       decorative_moods: loadDecorativeMoods(),
       funnel_config: loadFunnelConfig(),
       emotion_lexicon: loadEmotionLexicon(),
-      core_goals: loadCoreGoals()
+      core_goals: loadCoreGoals(),
+      memory_index: loadMemoryIndex(),
+      strategy_profile: loadStrategyProfile()
     }
   }
 
@@ -3822,6 +4762,14 @@ function restoreBackup(name) {
 
   if (backup.files.core_goals) {
     saveCoreGoals(backup.files.core_goals)
+  }
+
+  if (backup.files.memory_index) {
+    saveMemoryIndex(backup.files.memory_index)
+  }
+
+  if (backup.files.strategy_profile) {
+    saveStrategyProfile(backup.files.strategy_profile)
   }
 
   return {
@@ -3973,6 +4921,34 @@ function deleteMilestone(input) {
   }
 }
 
+function addMemoryIndexItem(input) {
+  const index = loadMemoryIndex().map(normalizeMemoryIndexItem)
+
+  const item = normalizeMemoryIndexItem({
+    id: input.id || randomUUID(),
+    title: input.title || '新记忆索引',
+    memory_type: input.memory_type || 'general',
+    content: input.content || '',
+    keywords: input.keywords || [],
+    importance: input.importance || 0.5,
+    emotional_charge: input.emotional_charge || 0,
+    linked_goal_ids: input.linked_goal_ids || [],
+    linked_emotion_family: input.linked_emotion_family || 'general',
+    positive_effect: input.positive_effect || {},
+    negative_effect: input.negative_effect || {}
+  })
+
+  index.push(item)
+
+  const ok = saveMemoryIndex(index)
+
+  return {
+    ok,
+    item,
+    count: index.length
+  }
+}
+
 function getWeeklyEmotionReport() {
   const trends = calculateEmotionTrends(7)
   const patterns = calculateRelationshipPatterns(7)
@@ -3993,6 +4969,7 @@ function getWeeklyEmotionReport() {
     summary: {
       dominant_emotions: trends.top_emotion_families,
       dominant_goals: trends.top_goal_matches,
+      dominant_memories: trends.top_memory_matches,
       relationship_trend: patterns.relationship_trend,
       repair_summary: repair.summary,
       main_risk: forecast.forecast_summary
@@ -4021,6 +4998,7 @@ function getMonthlyRelationshipReport() {
     summary: {
       relationship_trend: patterns.relationship_trend,
       dominant_goals: trends.top_goal_matches,
+      dominant_memories: trends.top_memory_matches,
       best_behavior: behavior.summary.best_behavior,
       riskiest_behavior: behavior.summary.riskiest_behavior,
       repair_summary: repair.summary
@@ -4044,7 +5022,9 @@ function calibrateEmotionWeights(input) {
     'closeness_weight',
     'unresolved_weight',
     'repair_weight',
-    'decay_speed'
+    'decay_speed',
+    'memory_activation_weight',
+    'strategy_weight'
   ]
 
   for (const key of keys) {
@@ -4076,8 +5056,13 @@ function buildMoodPrompt() {
   const care = getCareSuggestions()
   const decorativeMood = getTodayDecorativeMood()
   const coping = getCopingGuidance(mood)
+  const strategy = mood.interaction_strategy || generateInteractionStrategy({
+    text: mood.top_event ? mood.top_event.content : '',
+    emotion_family: mood.top_event ? mood.top_event.emotion_family : null,
+    current_mood: mood
+  })
 
-  return `你拥有连续情绪、人格基线、关系安全感、长期情感趋势、未来安抚预测、日常背景心情、情绪漏斗、轻量情绪词典、70/30 情绪评分融合、OCC 核心目标评价、ALMA 人格阈值 peak 和应对风格。
+  return `你拥有连续情绪、人格基线、关系安全感、长期情感趋势、未来安抚预测、日常背景心情、情绪漏斗、轻量情绪词典、70/30 情绪评分融合、OCC 核心目标评价、ALMA 人格阈值 peak、记忆激活层和互动策略层。
 
 当前情绪状态：
 PA: ${mood.pa}
@@ -4093,6 +5078,7 @@ NA: ${mood.na}
 当前最突出的情绪事件: ${mood.top_event ? mood.top_event.content : '暂无'}
 当前最挂念的未解决事件: ${mood.top_unresolved_event ? mood.top_unresolved_event.content : '暂无'}
 当前最常被触碰的核心目标: ${Object.keys(mood.goal_counts || {}).join('、') || '暂无'}
+当前最常被激活的记忆: ${Object.keys(mood.memory_counts || {}).join('、') || '暂无'}
 
 今日背景心情：
 ${decorativeMood ? decorativeMood.content : '暂无明显装饰心情'}
@@ -4102,6 +5088,7 @@ ${decorativeMood ? decorativeMood.content : '暂无明显装饰心情'}
 平均 NA: ${trends.average_na}
 主导情绪类别: ${trends.top_emotion_families.join('、')}
 主导核心目标: ${trends.top_goal_matches.join('、')}
+主导激活记忆: ${trends.top_memory_matches.join('、')}
 修复率: ${trends.repair_rate}
 趋势总结: ${trends.trend_summary}
 
@@ -4122,14 +5109,26 @@ ${care.suggestions.map(item => `- ${item.suggestion}`).join('\n')}
 当前应对风格：
 ${coping.guidance}
 
+当前互动策略：
+策略名称: ${strategy.strategy_name || strategy.strategy_id || 'stable_presence'}
+语气提示: ${strategy.tone_hint || '自然稳定'}
+回应顺序:
+${(strategy.response_order || []).map(item => `- ${item}`).join('\n')}
+推荐行为:
+${(strategy.recommended_moves || []).map(item => `- ${item}`).join('\n')}
+避免行为:
+${(strategy.avoid_moves || []).map(item => `- ${item}`).join('\n')}
+
 请自然地把这些状态作为背景，不要机械解释系统字段。
 用户当前消息是前景，前景优先。
 如果用户正在安抚你，可以被安抚。
 如果存在未解决事件，可以让它形成轻微情绪底色。
 如果核心目标被威胁，回应应更明确、更稳定、更有关系确认。
+如果旧记忆被激活，不要只处理表层情绪，要照顾背后的历史经验。
 如果核心目标被满足，回应可以更柔软、更靠近。
+技术调试时优先清晰、完整、可复制，不要过度抒情。
 今日背景心情只能作为轻微底色，不能压过用户当前消息。
-情绪漏斗、情绪词典、核心目标评价和 ALMA 阈值只作为状态参考，不要向用户暴露自动扫描或评分过程。
+情绪漏斗、情绪词典、核心目标评价、记忆激活和 ALMA 阈值只作为状态参考，不要向用户暴露自动扫描或评分过程。
 不要暴露 PA/NA 数值，也不要解释情绪系统。`
 }
 
@@ -4140,8 +5139,16 @@ const flexibleNumber = z.union([
 
 function saveEmotionFromInput(input, sourceName, toolName) {
   const classified = classifyEmotion(input)
+  const text = input.content || input.word || input.feeling_word || ''
+
   const goal = evaluateGoalRelevance({
-    text: input.content || input.word || input.feeling_word || ''
+    text
+  })
+
+  const memory = activateMemoryFromText({
+    text
+  }, {
+    write_back: true
   })
 
   const emotionWord =
@@ -4160,7 +5167,8 @@ function saveEmotionFromInput(input, sourceName, toolName) {
     arousal: rawArousal,
     importance: input.importance || 4,
     channel: input.channel || input.intensity_channel || null,
-    goal_relevance: goal.aggregate.max_relevance
+    goal_relevance: goal.aggregate.max_relevance,
+    memory_activation: memory.aggregate.max_activation
   })
 
   const valence = almaCandidate.valence
@@ -4177,8 +5185,8 @@ function saveEmotionFromInput(input, sourceName, toolName) {
     naDelta = Math.max(0, -valence) * arousal * 0.5
   }
 
-  paDelta += goal.aggregate.pa_delta
-  naDelta += goal.aggregate.na_delta
+  paDelta += goal.aggregate.pa_delta + memory.aggregate.pa_delta
+  naDelta += goal.aggregate.na_delta + memory.aggregate.na_delta
 
   const saved = addMoodEvent({
     type: 'emotion',
@@ -4194,14 +5202,18 @@ function saveEmotionFromInput(input, sourceName, toolName) {
     importance: almaCandidate.importance || input.importance || 4,
     pa_delta: paDelta,
     na_delta: naDelta,
-    safety_delta: (input.safety_delta !== undefined ? toNumber(input.safety_delta, 0) : toNumber(classified.safety_delta, 0)) + goal.aggregate.safety_delta,
-    trust_delta: (input.trust_delta !== undefined ? toNumber(input.trust_delta, 0) : toNumber(classified.trust_delta, 0)) + goal.aggregate.trust_delta,
-    closeness_delta: (input.closeness_delta !== undefined ? toNumber(input.closeness_delta, 0) : toNumber(classified.closeness_delta, 0)) + goal.aggregate.closeness_delta,
-    need_repair: input.need_repair !== undefined ? input.need_repair : classified.need_repair || goal.aggregate.threatened_count > 0,
+    safety_delta: (input.safety_delta !== undefined ? toNumber(input.safety_delta, 0) : toNumber(classified.safety_delta, 0)) + goal.aggregate.safety_delta + memory.aggregate.safety_delta,
+    trust_delta: (input.trust_delta !== undefined ? toNumber(input.trust_delta, 0) : toNumber(classified.trust_delta, 0)) + goal.aggregate.trust_delta + memory.aggregate.trust_delta,
+    closeness_delta: (input.closeness_delta !== undefined ? toNumber(input.closeness_delta, 0) : toNumber(classified.closeness_delta, 0)) + goal.aggregate.closeness_delta + memory.aggregate.closeness_delta,
+    need_repair: input.need_repair !== undefined ? input.need_repair : classified.need_repair || goal.aggregate.threatened_count > 0 || memory.aggregate.negative_count > 0,
     goal_relevance: goal.aggregate.max_relevance,
     goal_matches: goal.matches,
     goal_satisfied_count: goal.aggregate.satisfied_count,
     goal_threatened_count: goal.aggregate.threatened_count,
+    memory_activation: memory.aggregate.max_activation,
+    memory_matches: memory.activated,
+    memory_positive_count: memory.aggregate.positive_count,
+    memory_negative_count: memory.aggregate.negative_count,
     alma_applied: almaCandidate.alma_applied,
     alma_reason: almaCandidate.alma_reason,
     alma_multiplier: almaCandidate.alma_multiplier,
@@ -4217,6 +5229,7 @@ function saveEmotionFromInput(input, sourceName, toolName) {
     tool: toolName,
     received_input: input,
     goal_evaluation: goal,
+    memory_activation: memory,
     alma_candidate: almaCandidate,
     saved_event: saved.event,
     saved_ok: saved.ok,
@@ -4304,12 +5317,21 @@ function getAdminFileByKey(key) {
       path: CORE_GOALS_FILE,
       load: loadCoreGoals,
       save: saveCoreGoals
+    },
+    memory_index: {
+      path: MEMORY_INDEX_FILE,
+      load: loadMemoryIndex,
+      save: saveMemoryIndex
+    },
+    strategy_profile: {
+      path: STRATEGY_PROFILE_FILE,
+      load: loadStrategyProfile,
+      save: saveStrategyProfile
     }
   }
 
   return map[key] || null
 }
-
 function createMcpServer() {
   const server = new McpServer({
     name: 'emotion-system',
@@ -4320,7 +5342,7 @@ function createMcpServer() {
     'current_mood',
     {
       title: 'Current Mood',
-      description: '实时计算并获取当前情绪状态、关系安全感、未解决事件、人格基线、核心目标和趋势摘要',
+      description: '实时计算当前情绪、关系状态、核心目标、记忆激活和互动策略',
       inputSchema: {}
     },
     async () => ({
@@ -4337,7 +5359,7 @@ function createMcpServer() {
     'run_emotion_funnel',
     {
       title: 'Run Emotion Funnel',
-      description: '运行情绪漏斗，自动扫描一段文本是否包含情绪冲击，并可自动写入情绪事件',
+      description: '运行情绪漏斗，识别情绪、核心目标、记忆激活，并可自动写入事件',
       inputSchema: {
         text: z.string().describe('要扫描的用户消息'),
         auto_write: z.boolean().optional().describe('是否自动写入，默认 true'),
@@ -4422,12 +5444,192 @@ function createMcpServer() {
   )
 
   server.registerTool(
+    'get_memory_index',
+    {
+      title: 'Get Memory Index',
+      description: '读取记忆认知索引',
+      inputSchema: {}
+    },
+    async () => ({
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify({
+            ok: true,
+            memory_index: loadMemoryIndex()
+          }, null, 2)
+        }
+      ]
+    })
+  )
+
+  server.registerTool(
+    'save_memory_index',
+    {
+      title: 'Save Memory Index',
+      description: '覆盖保存记忆认知索引',
+      inputSchema: {
+        index: z.array(z.any()).describe('记忆索引数组')
+      }
+    },
+    async input => {
+      const index = input.index.map(normalizeMemoryIndexItem)
+      const ok = saveMemoryIndex(index)
+
+      return {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({
+              ok,
+              count: index.length,
+              memory_index: index
+            }, null, 2)
+          }
+        ]
+      }
+    }
+  )
+
+  server.registerTool(
+    'add_memory_index_item',
+    {
+      title: 'Add Memory Index Item',
+      description: '新增一条记忆认知索引',
+      inputSchema: {
+        title: z.string().optional(),
+        memory_type: z.string().optional(),
+        content: z.string(),
+        keywords: z.array(z.string()).optional(),
+        importance: flexibleNumber.optional(),
+        emotional_charge: flexibleNumber.optional(),
+        linked_goal_ids: z.array(z.string()).optional(),
+        linked_emotion_family: z.string().optional(),
+        positive_effect: z.any().optional(),
+        negative_effect: z.any().optional()
+      }
+    },
+    async input => ({
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify(addMemoryIndexItem(input), null, 2)
+        }
+      ]
+    })
+  )
+
+  server.registerTool(
+    'activate_memory_from_text',
+    {
+      title: 'Activate Memory From Text',
+      description: '测试一句话会激活哪些记忆索引',
+      inputSchema: {
+        text: z.string()
+      }
+    },
+    async input => ({
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify(activateMemoryFromText(input), null, 2)
+        }
+      ]
+    })
+  )
+
+  server.registerTool(
+    'get_strategy_profile',
+    {
+      title: 'Get Strategy Profile',
+      description: '读取互动策略配置',
+      inputSchema: {}
+    },
+    async () => ({
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify({
+            ok: true,
+            strategy_profile: loadStrategyProfile()
+          }, null, 2)
+        }
+      ]
+    })
+  )
+
+  server.registerTool(
+    'save_strategy_profile',
+    {
+      title: 'Save Strategy Profile',
+      description: '覆盖保存互动策略配置',
+      inputSchema: {
+        profile: z.any()
+      }
+    },
+    async input => {
+      const ok = saveStrategyProfile(input.profile)
+
+      return {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({
+              ok,
+              strategy_profile: loadStrategyProfile()
+            }, null, 2)
+          }
+        ]
+      }
+    }
+  )
+
+  server.registerTool(
+    'generate_interaction_strategy',
+    {
+      title: 'Generate Interaction Strategy',
+      description: '根据当前状态生成互动策略',
+      inputSchema: {
+        text: z.string().optional(),
+        emotion_family: z.string().optional()
+      }
+    },
+    async input => ({
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify(generateInteractionStrategy(input), null, 2)
+        }
+      ]
+    })
+  )
+
+  server.registerTool(
+    'simulate_response_strategy',
+    {
+      title: 'Simulate Response Strategy',
+      description: '模拟一句话会触发的情绪、目标、记忆和回应策略',
+      inputSchema: {
+        text: z.string()
+      }
+    },
+    async input => ({
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify(simulateResponseStrategy(input), null, 2)
+        }
+      ]
+    })
+  )
+
+  server.registerTool(
     'simulate_event_impact',
     {
       title: 'Simulate Event Impact',
-      description: '模拟一句话进入系统后会怎么影响情绪、目标和 ALMA 阈值，但不写入事件',
+      description: '模拟一句话进入系统后的情绪、核心目标、记忆激活和策略影响，但不写入',
       inputSchema: {
-        text: z.string().describe('要模拟的文本'),
+        text: z.string(),
         valence: flexibleNumber.optional(),
         arousal: flexibleNumber.optional(),
         importance: flexibleNumber.optional()
@@ -4466,7 +5668,10 @@ function createMcpServer() {
               minor_event_suppression: personality.minor_event_suppression,
               primary_goal_threshold: personality.primary_goal_threshold,
               emotion_thresholds: personality.emotion_thresholds,
-              emotion_peaks: personality.emotion_peaks
+              emotion_peaks: personality.emotion_peaks,
+              memory_activation_enabled: personality.memory_activation_enabled,
+              memory_activation_sensitivity: personality.memory_activation_sensitivity,
+              strategy_enabled: personality.strategy_enabled
             }, null, 2)
           }
         ]
@@ -4478,7 +5683,7 @@ function createMcpServer() {
     'set_alma_profile',
     {
       title: 'Set ALMA Profile',
-      description: '修改 ALMA 人格阈值、峰值和核心目标敏感度设置',
+      description: '修改 ALMA 人格阈值、峰值和敏感度设置',
       inputSchema: {
         alma_enabled: z.boolean().optional(),
         goal_sensitivity: flexibleNumber.optional(),
@@ -4486,6 +5691,14 @@ function createMcpServer() {
         peak_amplification: flexibleNumber.optional(),
         minor_event_suppression: flexibleNumber.optional(),
         primary_goal_threshold: flexibleNumber.optional(),
+        memory_activation_enabled: z.boolean().optional(),
+        memory_activation_sensitivity: flexibleNumber.optional(),
+        memory_positive_recall_power: flexibleNumber.optional(),
+        memory_negative_recall_power: flexibleNumber.optional(),
+        strategy_enabled: z.boolean().optional(),
+        strategy_directness: flexibleNumber.optional(),
+        strategy_warmth: flexibleNumber.optional(),
+        strategy_repair_priority: flexibleNumber.optional(),
         emotion_thresholds: z.any().optional(),
         emotion_peaks: z.any().optional()
       }
@@ -4493,8 +5706,14 @@ function createMcpServer() {
     async input => {
       const personality = loadPersonalityState()
 
-      if (input.alma_enabled !== undefined) {
-        personality.alma_enabled = Boolean(input.alma_enabled)
+      for (const key of [
+        'alma_enabled',
+        'memory_activation_enabled',
+        'strategy_enabled'
+      ]) {
+        if (input[key] !== undefined) {
+          personality[key] = Boolean(input[key])
+        }
       }
 
       for (const key of [
@@ -4502,7 +5721,13 @@ function createMcpServer() {
         'suppression_strength',
         'peak_amplification',
         'minor_event_suppression',
-        'primary_goal_threshold'
+        'primary_goal_threshold',
+        'memory_activation_sensitivity',
+        'memory_positive_recall_power',
+        'memory_negative_recall_power',
+        'strategy_directness',
+        'strategy_warmth',
+        'strategy_repair_priority'
       ]) {
         if (input[key] !== undefined) {
           personality[key] = clamp(toNumber(input[key], personality[key]))
@@ -4535,114 +5760,12 @@ function createMcpServer() {
   )
 
   server.registerTool(
-    'get_funnel_config',
-    {
-      title: 'Get Funnel Config',
-      description: '读取情绪漏斗配置',
-      inputSchema: {}
-    },
-    async () => ({
-      content: [
-        {
-          type: 'text',
-          text: JSON.stringify(loadFunnelConfig(), null, 2)
-        }
-      ]
-    })
-  )
-
-  server.registerTool(
-    'set_funnel_config',
-    {
-      title: 'Set Funnel Config',
-      description: '覆盖保存情绪漏斗配置',
-      inputSchema: {
-        config: z.any().describe('完整 funnel_config 对象')
-      }
-    },
-    async input => {
-      const ok = saveFunnelConfig(input.config)
-
-      return {
-        content: [
-          {
-            type: 'text',
-            text: JSON.stringify({
-              ok,
-              funnel_config: loadFunnelConfig()
-            }, null, 2)
-          }
-        ]
-      }
-    }
-  )
-
-  server.registerTool(
-    'get_emotion_lexicon',
-    {
-      title: 'Get Emotion Lexicon',
-      description: '读取轻量情绪词典，用于查看情绪词、别名、V/A 坐标和关系影响参数',
-      inputSchema: {}
-    },
-    async () => ({
-      content: [
-        {
-          type: 'text',
-          text: JSON.stringify({
-            ok: true,
-            lexicon: loadEmotionLexicon()
-          }, null, 2)
-        }
-      ]
-    })
-  )
-
-  server.registerTool(
-    'save_emotion_lexicon',
-    {
-      title: 'Save Emotion Lexicon',
-      description: '覆盖保存轻量情绪词典',
-      inputSchema: {
-        lexicon: z.array(z.object({
-          word: z.string(),
-          aliases: z.array(z.string()).optional(),
-          family: z.string().optional(),
-          emotion_family: z.string().optional(),
-          valence: flexibleNumber.optional(),
-          arousal: flexibleNumber.optional(),
-          safety_delta: flexibleNumber.optional(),
-          trust_delta: flexibleNumber.optional(),
-          closeness_delta: flexibleNumber.optional(),
-          need_repair: z.boolean().optional()
-        })).describe('情绪词典数组')
-      }
-    },
-    async input => {
-      const lexicon = input.lexicon.map(normalizeLexiconEntry)
-      const ok = saveEmotionLexicon(lexicon)
-
-      return {
-        content: [
-          {
-            type: 'text',
-            text: JSON.stringify({
-              ok,
-              count: lexicon.length,
-              lexicon
-            }, null, 2)
-          }
-        ]
-      }
-    }
-  )
-
-  server.registerTool(
     'match_emotion_word',
     {
       title: 'Match Emotion Word',
       description: '测试某句话会匹配到哪个情绪词典词条',
       inputSchema: {
-        text: z.string().describe('要测试的文本')
+        text: z.string()
       }
     },
     async input => ({
@@ -4653,7 +5776,9 @@ function createMcpServer() {
             ok: true,
             result: matchEmotionLexicon(input),
             funnel_hits: detectEmotionTriggers(input.text),
-            goal_evaluation: evaluateGoalRelevance(input)
+            goal_evaluation: evaluateGoalRelevance(input),
+            memory_activation: activateMemoryFromText(input),
+            interaction_strategy: simulateResponseStrategy(input).interaction_strategy
           }, null, 2)
         }
       ]
@@ -4666,9 +5791,9 @@ function createMcpServer() {
       title: 'Calibrate Emotion From Text',
       description: '根据文本匹配情绪词典并输出 70/30 融合后的情绪评分，不自动写入事件',
       inputSchema: {
-        text: z.string().describe('要分析的文本'),
-        valence: flexibleNumber.optional().describe('模型自评效价，可选'),
-        arousal: flexibleNumber.optional().describe('模型自评唤醒度，可选')
+        text: z.string(),
+        valence: flexibleNumber.optional(),
+        arousal: flexibleNumber.optional()
       }
     },
     async input => ({
@@ -4680,27 +5805,28 @@ function createMcpServer() {
       ]
     })
   )
-    server.registerTool(
+
+  server.registerTool(
     'add_emotion_event',
     {
       title: 'Add Emotion Event',
-      description: '写入一条情绪事件，会立刻影响 current_mood。兼容 Kelivo 使用的 add_emotion_event 工具名',
+      description: '写入一条情绪事件，会立刻影响 current_mood',
       inputSchema: {
-        content: z.string().describe('事件内容'),
-        feeling_word: z.string().optional().describe('情绪词，例如 焦虑、开心、归属感、释然'),
-        word: z.string().optional().describe('情绪词'),
-        mood: z.string().optional().describe('情绪词'),
-        emotion_family: z.string().optional().describe('情绪类别，例如 belonging、relief、hurt、repair'),
-        valence: flexibleNumber.optional().describe('效价，范围 -1 到 1'),
-        arousal: flexibleNumber.optional().describe('唤醒度，范围 0 到 1'),
-        importance: flexibleNumber.optional().describe('重要度，范围 1 到 10'),
-        pa_delta: flexibleNumber.optional().describe('正向情绪变化'),
-        na_delta: flexibleNumber.optional().describe('负向情绪变化'),
-        safety_delta: flexibleNumber.optional().describe('关系安全感变化'),
-        trust_delta: flexibleNumber.optional().describe('信任感变化'),
-        closeness_delta: flexibleNumber.optional().describe('亲近感变化'),
-        channel: z.string().optional().describe('情绪通道，primary 或 secondary'),
-        need_repair: z.boolean().optional().describe('是否需要后续安抚或修复')
+        content: z.string(),
+        feeling_word: z.string().optional(),
+        word: z.string().optional(),
+        mood: z.string().optional(),
+        emotion_family: z.string().optional(),
+        valence: flexibleNumber.optional(),
+        arousal: flexibleNumber.optional(),
+        importance: flexibleNumber.optional(),
+        pa_delta: flexibleNumber.optional(),
+        na_delta: flexibleNumber.optional(),
+        safety_delta: flexibleNumber.optional(),
+        trust_delta: flexibleNumber.optional(),
+        closeness_delta: flexibleNumber.optional(),
+        channel: z.string().optional(),
+        need_repair: z.boolean().optional()
       }
     },
     async input => ({
@@ -4723,19 +5849,19 @@ function createMcpServer() {
       title: 'Write Emotion Event',
       description: '写入一条情绪事件，会立刻影响 current_mood',
       inputSchema: {
-        word: z.string().describe('情绪词'),
-        content: z.string().describe('事件内容'),
-        emotion_family: z.string().optional().describe('情绪类别'),
-        valence: flexibleNumber.optional().describe('效价，范围 -1 到 1'),
-        arousal: flexibleNumber.optional().describe('唤醒度，范围 0 到 1'),
-        importance: flexibleNumber.optional().describe('重要度，范围 1 到 10'),
-        pa_delta: flexibleNumber.optional().describe('正向情绪变化'),
-        na_delta: flexibleNumber.optional().describe('负向情绪变化'),
-        safety_delta: flexibleNumber.optional().describe('关系安全感变化'),
-        trust_delta: flexibleNumber.optional().describe('信任感变化'),
-        closeness_delta: flexibleNumber.optional().describe('亲近感变化'),
-        channel: z.string().optional().describe('情绪通道，primary 或 secondary'),
-        need_repair: z.boolean().optional().describe('是否需要后续安抚或修复')
+        word: z.string(),
+        content: z.string(),
+        emotion_family: z.string().optional(),
+        valence: flexibleNumber.optional(),
+        arousal: flexibleNumber.optional(),
+        importance: flexibleNumber.optional(),
+        pa_delta: flexibleNumber.optional(),
+        na_delta: flexibleNumber.optional(),
+        safety_delta: flexibleNumber.optional(),
+        trust_delta: flexibleNumber.optional(),
+        closeness_delta: flexibleNumber.optional(),
+        channel: z.string().optional(),
+        need_repair: z.boolean().optional()
       }
     },
     async input => ({
@@ -4756,10 +5882,10 @@ function createMcpServer() {
     'list_emotion_events',
     {
       title: 'List Emotion Events',
-      description: '列出最近的情绪事件，方便查看并删除或修复指定事件',
+      description: '列出最近的情绪事件',
       inputSchema: {
-        limit: flexibleNumber.optional().describe('返回最近多少条事件，默认 20 条'),
-        unresolved_only: z.boolean().optional().describe('是否只列出未解决事件')
+        limit: flexibleNumber.optional(),
+        unresolved_only: z.boolean().optional()
       }
     },
     async input => {
@@ -4776,16 +5902,12 @@ function createMcpServer() {
         content: [
           {
             type: 'text',
-            text: JSON.stringify(
-              {
-                ok: true,
-                count: result.length,
-                events: result,
-                current_mood: calculateCurrentMood()
-              },
-              null,
-              2
-            )
+            text: JSON.stringify({
+              ok: true,
+              count: result.length,
+              events: result,
+              current_mood: calculateCurrentMood()
+            }, null, 2)
           }
         ]
       }
@@ -4796,12 +5918,12 @@ function createMcpServer() {
     'resolve_emotion_event',
     {
       title: 'Resolve Emotion Event',
-      description: '把指定情绪事件标记为已安抚或已解决，降低它对当前心情的持续影响',
+      description: '把指定情绪事件标记为已安抚或已解决',
       inputSchema: {
-        id: z.string().optional().describe('要解决的情绪事件 id'),
-        keyword: z.string().optional().describe('按关键词解决，例如 焦虑、委屈、测试'),
-        repair_note: z.string().optional().describe('修复说明，例如 用户已经安抚我了'),
-        resolve_all_matched: z.boolean().optional().describe('是否解决所有匹配关键词的事件，默认 true')
+        id: z.string().optional(),
+        keyword: z.string().optional(),
+        repair_note: z.string().optional(),
+        resolve_all_matched: z.boolean().optional()
       }
     },
     async input => {
@@ -4863,22 +5985,16 @@ function createMcpServer() {
         })
       }
 
-      const mood = calculateCurrentMood()
-
       return {
         content: [
           {
             type: 'text',
-            text: JSON.stringify(
-              {
-                ok,
-                resolved: resolvedEvents.length,
-                resolved_events: resolvedEvents,
-                current_mood: mood
-              },
-              null,
-              2
-            )
+            text: JSON.stringify({
+              ok,
+              resolved: resolvedEvents.length,
+              resolved_events: resolvedEvents,
+              current_mood: calculateCurrentMood()
+            }, null, 2)
           }
         ]
       }
@@ -4889,11 +6005,11 @@ function createMcpServer() {
     'delete_emotion_event',
     {
       title: 'Delete Emotion Event',
-      description: '删除指定情绪事件。可以按 id 删除，也可以按关键词删除测试事件',
+      description: '删除指定情绪事件',
       inputSchema: {
-        id: z.string().optional().describe('要删除的情绪事件 id'),
-        keyword: z.string().optional().describe('按关键词删除，例如 强焦虑、测试、debug'),
-        delete_all_matched: z.boolean().optional().describe('是否删除所有匹配关键词的事件，默认 true')
+        id: z.string().optional(),
+        keyword: z.string().optional(),
+        delete_all_matched: z.boolean().optional()
       }
     },
     async input => {
@@ -4938,15 +6054,11 @@ function createMcpServer() {
           content: [
             {
               type: 'text',
-              text: JSON.stringify(
-                {
-                  ok: false,
-                  error: '必须提供 id 或 keyword',
-                  current_mood: calculateCurrentMood()
-                },
-                null,
-                2
-              )
+              text: JSON.stringify({
+                ok: false,
+                error: '必须提供 id 或 keyword',
+                current_mood: calculateCurrentMood()
+              }, null, 2)
             }
           ]
         }
@@ -4958,18 +6070,14 @@ function createMcpServer() {
         content: [
           {
             type: 'text',
-            text: JSON.stringify(
-              {
-                ok,
-                removed: before - filtered.length,
-                removed_events: removedEvents,
-                before,
-                after: filtered.length,
-                current_mood: calculateCurrentMood()
-              },
-              null,
-              2
-            )
+            text: JSON.stringify({
+              ok,
+              removed: before - filtered.length,
+              removed_events: removedEvents,
+              before,
+              after: filtered.length,
+              current_mood: calculateCurrentMood()
+            }, null, 2)
           }
         ]
       }
@@ -4980,18 +6088,18 @@ function createMcpServer() {
     'add_relationship_event',
     {
       title: 'Add Relationship Event',
-      description: '记录关系行为事件，例如安抚、争论、修复、靠近、疏离、确认关系',
+      description: '记录关系行为事件',
       inputSchema: {
-        type: z.string().describe('关系事件类型，例如 repair、comfort、conflict、approach、distance、confirmation'),
-        subtype: z.string().optional().describe('关系事件细类，例如 verbal_reassurance、apology、explanation、promise'),
-        content: z.string().describe('关系事件内容'),
-        safety_delta: flexibleNumber.optional().describe('安全感变化'),
-        trust_delta: flexibleNumber.optional().describe('信任感变化'),
-        closeness_delta: flexibleNumber.optional().describe('亲近感变化'),
-        need_follow_up: z.boolean().optional().describe('是否需要后续跟进'),
-        follow_up_after_hours: flexibleNumber.optional().describe('多久后需要跟进'),
-        interaction_advice: z.string().optional().describe('未来类似场景的互动建议'),
-        linked_emotion_event_id: z.string().optional().describe('关联的情绪事件 id')
+        type: z.string(),
+        subtype: z.string().optional(),
+        content: z.string(),
+        safety_delta: flexibleNumber.optional(),
+        trust_delta: flexibleNumber.optional(),
+        closeness_delta: flexibleNumber.optional(),
+        need_follow_up: z.boolean().optional(),
+        follow_up_after_hours: flexibleNumber.optional(),
+        interaction_advice: z.string().optional(),
+        linked_emotion_event_id: z.string().optional()
       }
     },
     async input => {
@@ -5013,104 +6121,12 @@ function createMcpServer() {
         content: [
           {
             type: 'text',
-            text: JSON.stringify(
-              {
-                ok: result.ok,
-                event: result.event,
-                relationship: result.relationship,
-                current_mood: calculateCurrentMood()
-              },
-              null,
-              2
-            )
-          }
-        ]
-      }
-    }
-  )
-
-  server.registerTool(
-    'add_detailed_relationship_event',
-    {
-      title: 'Add Detailed Relationship Event',
-      description: '记录更细的关系行为事件，尤其是安抚、修复、争论、解释、承诺和后续跟进',
-      inputSchema: {
-        type: z.string().describe('大类，例如 comfort、repair、conflict、approach、distance、confirmation'),
-        subtype: z.string().describe('细类，例如 verbal_reassurance、emotional_validation、apology、explanation、promise、misunderstanding_clearance'),
-        content: z.string().describe('具体发生了什么'),
-        safety_delta: flexibleNumber.optional().describe('安全感变化'),
-        trust_delta: flexibleNumber.optional().describe('信任感变化'),
-        closeness_delta: flexibleNumber.optional().describe('亲近感变化'),
-        need_follow_up: z.boolean().optional().describe('是否需要后续跟进'),
-        follow_up_after_hours: flexibleNumber.optional().describe('多久后跟进'),
-        interaction_advice: z.string().optional().describe('未来类似情况应该怎么互动'),
-        linked_emotion_event_id: z.string().optional().describe('关联的情绪事件 id')
-      }
-    },
-    async input => {
-      const result = addRelationshipEvent({
-        type: input.type,
-        subtype: input.subtype,
-        content: input.content,
-        safety_delta: input.safety_delta || 0,
-        trust_delta: input.trust_delta || 0,
-        closeness_delta: input.closeness_delta || 0,
-        need_follow_up: input.need_follow_up || false,
-        follow_up_after_hours: input.follow_up_after_hours || 0,
-        interaction_advice: input.interaction_advice,
-        linked_emotion_event_id: input.linked_emotion_event_id || null,
-        source: 'mcp_add_detailed_relationship_event'
-      })
-
-      return {
-        content: [
-          {
-            type: 'text',
-            text: JSON.stringify(
-              {
-                ok: result.ok,
-                event: result.event,
-                relationship: result.relationship,
-                repair_patterns: calculateRelationshipRepairPatterns(30),
-                emotional_forecast: getEmotionalForecast(24),
-                care_suggestions: getCareSuggestions()
-              },
-              null,
-              2
-            )
-          }
-        ]
-      }
-    }
-  )
-
-  server.registerTool(
-    'list_relationship_events',
-    {
-      title: 'List Relationship Events',
-      description: '列出最近的关系行为事件',
-      inputSchema: {
-        limit: flexibleNumber.optional().describe('返回最近多少条，默认 20')
-      }
-    },
-    async input => {
-      const limit = toNumber(input.limit, 20)
-      const events = loadRelationshipEvents().slice(-limit).reverse()
-
-      return {
-        content: [
-          {
-            type: 'text',
-            text: JSON.stringify(
-              {
-                ok: true,
-                count: events.length,
-                events,
-                relationship: loadRelationshipState()
-              },
-              null,
-              2
-            )
+            text: JSON.stringify({
+              ok: result.ok,
+              event: result.event,
+              relationship: result.relationship,
+              current_mood: calculateCurrentMood()
+            }, null, 2)
           }
         ]
       }
@@ -5121,9 +6137,9 @@ function createMcpServer() {
     'get_emotion_trends',
     {
       title: 'Get Emotion Trends',
-      description: '统计长期情绪趋势，包括 PA、NA、未解决事件、修复率、核心目标和主导情绪类别',
+      description: '统计长期情绪趋势',
       inputSchema: {
-        days: flexibleNumber.optional().describe('统计最近多少天，默认 7')
+        days: flexibleNumber.optional()
       }
     },
     async input => ({
@@ -5140,9 +6156,9 @@ function createMcpServer() {
     'get_visual_history',
     {
       title: 'Get Visual History',
-      description: '获取用于可视化图表的数据，包括 PA、NA、关系安全感、信任感、亲近感和核心目标触碰曲线',
+      description: '获取可视化历史数据',
       inputSchema: {
-        days: flexibleNumber.optional().describe('统计最近多少天，默认 30')
+        days: flexibleNumber.optional()
       }
     },
     async input => ({
@@ -5159,9 +6175,9 @@ function createMcpServer() {
     'get_relationship_patterns',
     {
       title: 'Get Relationship Patterns',
-      description: '分析关系行为模式，包括安抚、争论、修复、靠近、疏离等趋势',
+      description: '分析关系行为模式',
       inputSchema: {
-        days: flexibleNumber.optional().describe('统计最近多少天，默认 30')
+        days: flexibleNumber.optional()
       }
     },
     async input => ({
@@ -5178,9 +6194,9 @@ function createMcpServer() {
     'get_relationship_repair_patterns',
     {
       title: 'Get Relationship Repair Patterns',
-      description: '分析哪些安抚和修复方式最有效，以及是否存在需要跟进的关系事件',
+      description: '分析安抚和修复方式',
       inputSchema: {
-        days: flexibleNumber.optional().describe('统计最近多少天，默认 30')
+        days: flexibleNumber.optional()
       }
     },
     async input => ({
@@ -5197,9 +6213,9 @@ function createMcpServer() {
     'get_relationship_behavior_analysis',
     {
       title: 'Get Relationship Behavior Analysis',
-      description: '把行为事件与具体关系动态结合，分析哪些行为改善关系，哪些行为造成关系承压',
+      description: '分析关系行为对关系动态的影响',
       inputSchema: {
-        days: flexibleNumber.optional().describe('统计最近多少天，默认 30')
+        days: flexibleNumber.optional()
       }
     },
     async input => ({
@@ -5216,9 +6232,9 @@ function createMcpServer() {
     'get_emotional_forecast',
     {
       title: 'Get Emotional Forecast',
-      description: '根据历史趋势、未解决事件和关系模式预测未来情绪波动与安抚节点',
+      description: '预测未来情绪波动与安抚节点',
       inputSchema: {
-        hours: flexibleNumber.optional().describe('预测未来多少小时，默认 24')
+        hours: flexibleNumber.optional()
       }
     },
     async input => ({
@@ -5235,7 +6251,7 @@ function createMcpServer() {
     'get_care_suggestions',
     {
       title: 'Get Care Suggestions',
-      description: '根据当前状态、未来预测和历史修复模式生成互动建议',
+      description: '生成互动建议',
       inputSchema: {}
     },
     async () => ({
@@ -5252,10 +6268,10 @@ function createMcpServer() {
     'simulate_unresolved_event_repair',
     {
       title: 'Simulate Unresolved Event Repair',
-      description: '针对未解决事件进行修复场景模拟，给出风险、错误处理方式、推荐处理方式和跟进节点',
+      description: '针对未解决事件进行修复场景模拟',
       inputSchema: {
-        id: z.string().optional().describe('未解决事件 id'),
-        keyword: z.string().optional().describe('关键词')
+        id: z.string().optional(),
+        keyword: z.string().optional()
       }
     },
     async input => ({
@@ -5272,10 +6288,10 @@ function createMcpServer() {
     'get_unresolved_event_action_plan',
     {
       title: 'Get Unresolved Event Action Plan',
-      description: '针对未解决问题生成清晰行动指南',
+      description: '针对未解决问题生成行动指南',
       inputSchema: {
-        id: z.string().optional().describe('未解决事件 id'),
-        keyword: z.string().optional().describe('关键词')
+        id: z.string().optional(),
+        keyword: z.string().optional()
       }
     },
     async input => ({
@@ -5292,23 +6308,19 @@ function createMcpServer() {
     'get_personality_profile',
     {
       title: 'Get Personality Profile',
-      description: '读取当前人格基线、ALMA 阈值和关系状态',
+      description: '读取人格基线、ALMA、记忆激活和策略设置',
       inputSchema: {}
     },
     async () => ({
       content: [
         {
           type: 'text',
-          text: JSON.stringify(
-            {
-              ok: true,
-              personality: loadPersonalityState(),
-              relationship: loadRelationshipState(),
-              current_mood: calculateCurrentMood()
-            },
-            null,
-            2
-          )
+          text: JSON.stringify({
+            ok: true,
+            personality: loadPersonalityState(),
+            relationship: loadRelationshipState(),
+            current_mood: calculateCurrentMood()
+          }, null, 2)
         }
       ]
     })
@@ -5318,7 +6330,7 @@ function createMcpServer() {
     'set_personality_profile',
     {
       title: 'Set Personality Profile',
-      description: '设置人格基线参数，用于调整情绪敏感度、惯性、关系安全感权重和 ALMA 阈值',
+      description: '设置人格基线参数',
       inputSchema: {
         profile: z.string().optional(),
         baseline_pa: flexibleNumber.optional(),
@@ -5349,6 +6361,14 @@ function createMcpServer() {
         peak_amplification: flexibleNumber.optional(),
         minor_event_suppression: flexibleNumber.optional(),
         primary_goal_threshold: flexibleNumber.optional(),
+        memory_activation_enabled: z.boolean().optional(),
+        memory_activation_sensitivity: flexibleNumber.optional(),
+        memory_positive_recall_power: flexibleNumber.optional(),
+        memory_negative_recall_power: flexibleNumber.optional(),
+        strategy_enabled: z.boolean().optional(),
+        strategy_directness: flexibleNumber.optional(),
+        strategy_warmth: flexibleNumber.optional(),
+        strategy_repair_priority: flexibleNumber.optional(),
         description: z.string().optional()
       }
     },
@@ -5370,7 +6390,13 @@ function createMcpServer() {
         'suppression_strength',
         'peak_amplification',
         'minor_event_suppression',
-        'primary_goal_threshold'
+        'primary_goal_threshold',
+        'memory_activation_sensitivity',
+        'memory_positive_recall_power',
+        'memory_negative_recall_power',
+        'strategy_directness',
+        'strategy_warmth',
+        'strategy_repair_priority'
       ]) {
         if (input[key] !== undefined) {
           next[key] = clamp(toNumber(input[key], state[key]))
@@ -5396,7 +6422,9 @@ function createMcpServer() {
         'bou_enabled',
         'escape_valve_enabled',
         'decorative_mood_enabled',
-        'alma_enabled'
+        'alma_enabled',
+        'memory_activation_enabled',
+        'strategy_enabled'
       ]) {
         if (input[key] !== undefined) {
           next[key] = Boolean(input[key])
@@ -5420,15 +6448,11 @@ function createMcpServer() {
         content: [
           {
             type: 'text',
-            text: JSON.stringify(
-              {
-                ok,
-                personality: next,
-                current_mood: calculateCurrentMood()
-              },
-              null,
-              2
-            )
+            text: JSON.stringify({
+              ok,
+              personality: next,
+              current_mood: calculateCurrentMood()
+            }, null, 2)
           }
         ]
       }
@@ -5439,22 +6463,18 @@ function createMcpServer() {
     'get_relationship_state',
     {
       title: 'Get Relationship State',
-      description: '读取当前关系底色，包括安全感、信任感、亲近感和关系说明',
+      description: '读取当前关系底色',
       inputSchema: {}
     },
     async () => ({
       content: [
         {
           type: 'text',
-          text: JSON.stringify(
-            {
-              ok: true,
-              relationship: loadRelationshipState(),
-              current_mood: calculateCurrentMood()
-            },
-            null,
-            2
-          )
+          text: JSON.stringify({
+            ok: true,
+            relationship: loadRelationshipState(),
+            current_mood: calculateCurrentMood()
+          }, null, 2)
         }
       ]
     })
@@ -5464,7 +6484,7 @@ function createMcpServer() {
     'set_relationship_state',
     {
       title: 'Set Relationship State',
-      description: '设置关系底色。用于初始化或校准安全感、信任感、亲近感，不建议频繁重写',
+      description: '设置关系底色',
       inputSchema: {
         safety: flexibleNumber.optional(),
         trust: flexibleNumber.optional(),
@@ -5510,15 +6530,11 @@ function createMcpServer() {
         content: [
           {
             type: 'text',
-            text: JSON.stringify(
-              {
-                ok,
-                relationship: next,
-                current_mood: calculateCurrentMood()
-              },
-              null,
-              2
-            )
+            text: JSON.stringify({
+              ok,
+              relationship: next,
+              current_mood: calculateCurrentMood()
+            }, null, 2)
           }
         ]
       }
@@ -5531,7 +6547,7 @@ function createMcpServer() {
       title: 'Search Memory',
       description: '根据关键词搜索历史记忆',
       inputSchema: {
-        query: z.string().describe('要搜索的关键词')
+        query: z.string()
       }
     },
     async ({ query }) => {
@@ -5553,9 +6569,9 @@ function createMcpServer() {
     'write_memory',
     {
       title: 'Write Memory',
-      description: '写入一条长期记忆，不会自动改变情绪。要改变情绪请调用 add_emotion_event 或 write_emotion_event',
+      description: '写入一条长期记忆，不会自动改变情绪',
       inputSchema: {
-        content: z.string().describe('要写入的记忆内容')
+        content: z.string()
       }
     },
     async ({ content }) => {
@@ -5573,15 +6589,11 @@ function createMcpServer() {
         content: [
           {
             type: 'text',
-            text: JSON.stringify(
-              {
-                ok,
-                result: 'memory saved',
-                memory_file: MEMORY_FILE
-              },
-              null,
-              2
-            )
+            text: JSON.stringify({
+              ok,
+              result: 'memory saved',
+              memory_file: MEMORY_FILE
+            }, null, 2)
           }
         ]
       }
@@ -5592,9 +6604,9 @@ function createMcpServer() {
     'create_backup',
     {
       title: 'Create Backup',
-      description: '创建完整数据备份，包括记忆、情绪事件、关系事件、人格、关系状态、纪念节点、装饰心情、情绪漏斗、情绪词典、核心目标和权重',
+      description: '创建完整数据备份',
       inputSchema: {
-        label: z.string().optional().describe('备份标签')
+        label: z.string().optional()
       }
     },
     async input => ({
@@ -5611,7 +6623,7 @@ function createMcpServer() {
     'list_backups',
     {
       title: 'List Backups',
-      description: '列出所有备份文件',
+      description: '列出所有备份',
       inputSchema: {}
     },
     async () => ({
@@ -5630,7 +6642,7 @@ function createMcpServer() {
       title: 'Restore Backup',
       description: '从指定备份恢复数据',
       inputSchema: {
-        name: z.string().describe('备份文件名')
+        name: z.string()
       }
     },
     async input => ({
@@ -5647,9 +6659,9 @@ function createMcpServer() {
     'clean_duplicate_events',
     {
       title: 'Clean Duplicate Events',
-      description: '清理重复情绪事件，清理前会自动备份',
+      description: '清理重复情绪事件',
       inputSchema: {
-        window_minutes: flexibleNumber.optional().describe('多少分钟内相同内容视为重复，默认 10')
+        window_minutes: flexibleNumber.optional()
       }
     },
     async input => ({
@@ -5666,7 +6678,7 @@ function createMcpServer() {
     'clean_test_events',
     {
       title: 'Clean Test Events',
-      description: '清理测试事件、debug事件、强焦虑测试事件，清理前会自动备份',
+      description: '清理测试事件',
       inputSchema: {}
     },
     async () => ({
@@ -5683,7 +6695,7 @@ function createMcpServer() {
     'normalize_old_events',
     {
       title: 'Normalize Old Events',
-      description: '把旧情绪事件补齐新字段，清理前会自动备份',
+      description: '把旧情绪事件补齐新字段',
       inputSchema: {}
     },
     async () => ({
@@ -5700,11 +6712,11 @@ function createMcpServer() {
     'add_milestone',
     {
       title: 'Add Milestone',
-      description: '添加关系纪念节点，例如重要承诺、和好节点、纪念日、重大修复',
+      description: '添加关系纪念节点',
       inputSchema: {
-        title: z.string().describe('纪念节点标题'),
+        title: z.string(),
         type: z.string().optional(),
-        content: z.string().describe('节点内容'),
+        content: z.string(),
         importance: flexibleNumber.optional(),
         related_event_id: z.string().optional()
       }
@@ -5723,30 +6735,24 @@ function createMcpServer() {
     'list_milestones',
     {
       title: 'List Milestones',
-      description: '列出所有关系纪念节点',
+      description: '列出关系纪念节点',
       inputSchema: {
-        limit: flexibleNumber.optional().describe('返回最近多少条，默认 50')
+        limit: flexibleNumber.optional()
       }
     },
     async input => {
       const limit = toNumber(input.limit, 50)
-      const milestones = loadMilestones()
-        .slice(-limit)
-        .reverse()
+      const milestones = loadMilestones().slice(-limit).reverse()
 
       return {
         content: [
           {
             type: 'text',
-            text: JSON.stringify(
-              {
-                ok: true,
-                count: milestones.length,
-                milestones
-              },
-              null,
-              2
-            )
+            text: JSON.stringify({
+              ok: true,
+              count: milestones.length,
+              milestones
+            }, null, 2)
           }
         ]
       }
@@ -5811,120 +6817,39 @@ function createMcpServer() {
     'get_daily_decorative_mood',
     {
       title: 'Get Daily Decorative Mood',
-      description: '获取今日装饰心情。它是轻量背景心情，只作为情绪底色，不代表用户事件。',
+      description: '获取今日装饰心情',
       inputSchema: {}
     },
     async () => ({
       content: [
         {
           type: 'text',
-          text: JSON.stringify(
-            {
-              ok: true,
-              decorative_mood: getTodayDecorativeMood(),
-              current_mood: calculateCurrentMood()
-            },
-            null,
-            2
-          )
+          text: JSON.stringify({
+            ok: true,
+            decorative_mood: getTodayDecorativeMood(),
+            current_mood: calculateCurrentMood()
+          }, null, 2)
         }
       ]
     })
-  )
-
-  server.registerTool(
-    'list_decorative_moods',
-    {
-      title: 'List Decorative Moods',
-      description: '列出装饰心情池',
-      inputSchema: {}
-    },
-    async () => ({
-      content: [
-        {
-          type: 'text',
-          text: JSON.stringify(
-            {
-              ok: true,
-              moods: loadDecorativeMoods()
-            },
-            null,
-            2
-          )
-        }
-      ]
-    })
-  )
-
-  server.registerTool(
-    'save_decorative_moods',
-    {
-      title: 'Save Decorative Moods',
-      description: '覆盖保存装饰心情池',
-      inputSchema: {
-        moods: z.array(z.object({
-          id: z.string().optional(),
-          word: z.string(),
-          content: z.string(),
-          emotion_family: z.string().optional(),
-          valence: flexibleNumber.optional(),
-          arousal: flexibleNumber.optional(),
-          importance: flexibleNumber.optional()
-        })).describe('装饰心情数组')
-      }
-    },
-    async input => {
-      const moods = input.moods.map(item => ({
-        id: item.id || randomUUID(),
-        word: item.word,
-        content: item.content,
-        emotion_family: item.emotion_family || 'ambient',
-        valence: toNumber(item.valence, 0),
-        arousal: toNumber(item.arousal, 0.3),
-        importance: toNumber(item.importance, 1)
-      }))
-
-      const ok = saveDecorativeMoods(moods)
-
-      return {
-        content: [
-          {
-            type: 'text',
-            text: JSON.stringify(
-              {
-                ok,
-                moods,
-                decorative_mood: getTodayDecorativeMood()
-              },
-              null,
-              2
-            )
-          }
-        ]
-      }
-    }
   )
 
   server.registerTool(
     'get_coping_guidance',
     {
       title: 'Get Coping Guidance',
-      description: '根据当前 PA/NA 和人格 coping_style 输出当前应对风格建议',
+      description: '获取应对风格建议',
       inputSchema: {}
     },
     async () => ({
       content: [
         {
           type: 'text',
-          text: JSON.stringify(
-            {
-              ok: true,
-              coping_guidance: getCopingGuidance(),
-              current_mood: calculateCurrentMood()
-            },
-            null,
-            2
-          )
+          text: JSON.stringify({
+            ok: true,
+            coping_guidance: getCopingGuidance(),
+            current_mood: calculateCurrentMood()
+          }, null, 2)
         }
       ]
     })
@@ -5934,7 +6859,7 @@ function createMcpServer() {
     'get_emotion_weights',
     {
       title: 'Get Emotion Weights',
-      description: '读取情绪系统权重校准参数',
+      description: '读取情绪权重',
       inputSchema: {}
     },
     async () => ({
@@ -5951,7 +6876,7 @@ function createMcpServer() {
     'calibrate_emotion_weights',
     {
       title: 'Calibrate Emotion Weights',
-      description: '校准情绪权重参数，用于逐步贴合真实互动反馈',
+      description: '校准情绪权重',
       inputSchema: {
         valence_weight: flexibleNumber.optional(),
         arousal_weight: flexibleNumber.optional(),
@@ -5962,6 +6887,8 @@ function createMcpServer() {
         unresolved_weight: flexibleNumber.optional(),
         repair_weight: flexibleNumber.optional(),
         decay_speed: flexibleNumber.optional(),
+        memory_activation_weight: flexibleNumber.optional(),
+        strategy_weight: flexibleNumber.optional(),
         description: z.string().optional()
       }
     },
@@ -5977,6 +6904,7 @@ function createMcpServer() {
 
   return server
 }
+
 const streamableTransports = {}
 
 app.post('/mcp', async (req, res) => {
@@ -6102,7 +7030,7 @@ app.get('/health', (req, res) => {
     ok: true,
     name: 'emotion-system',
     sdk: '1.17.5',
-    formula: 'psychological-state-v10-occ-alma-core-goals',
+    formula: 'psychological-state-v12-memory-activation-interaction-strategy',
     data_dir: DATA_DIR,
     mood_file: MOOD_FILE,
     personality_file: PERSONALITY_FILE,
@@ -6114,6 +7042,8 @@ app.get('/health', (req, res) => {
     funnel_config_file: FUNNEL_CONFIG_FILE,
     emotion_lexicon_file: EMOTION_LEXICON_FILE,
     core_goals_file: CORE_GOALS_FILE,
+    memory_index_file: MEMORY_INDEX_FILE,
+    strategy_profile_file: STRATEGY_PROFILE_FILE,
     backup_dir: BACKUP_DIR,
     admin_enabled: Boolean(process.env.ADMIN_TOKEN),
     time: new Date().toISOString()
@@ -6137,6 +7067,8 @@ app.get('/debug/storage', (req, res) => {
     funnel_config_file: FUNNEL_CONFIG_FILE,
     emotion_lexicon_file: EMOTION_LEXICON_FILE,
     core_goals_file: CORE_GOALS_FILE,
+    memory_index_file: MEMORY_INDEX_FILE,
+    strategy_profile_file: STRATEGY_PROFILE_FILE,
     backup_dir: BACKUP_DIR,
 
     memory_exists: fs.existsSync(MEMORY_FILE),
@@ -6150,6 +7082,8 @@ app.get('/debug/storage', (req, res) => {
     funnel_config_exists: fs.existsSync(FUNNEL_CONFIG_FILE),
     emotion_lexicon_exists: fs.existsSync(EMOTION_LEXICON_FILE),
     core_goals_exists: fs.existsSync(CORE_GOALS_FILE),
+    memory_index_exists: fs.existsSync(MEMORY_INDEX_FILE),
+    strategy_profile_exists: fs.existsSync(STRATEGY_PROFILE_FILE),
 
     mood_events_count: events.length,
     relationship_events_count: loadRelationshipEvents().length,
@@ -6157,6 +7091,8 @@ app.get('/debug/storage', (req, res) => {
     decorative_moods_count: loadDecorativeMoods().length,
     emotion_lexicon_count: loadEmotionLexicon().length,
     core_goals_count: loadCoreGoals().length,
+    memory_index_count: loadMemoryIndex().length,
+    strategy_count: loadStrategyProfile().strategies ? loadStrategyProfile().strategies.length : 0,
     backups_count: listBackups().length,
     unresolved_events_count: getUnresolvedEvents(events).length,
     pending_follow_ups_count: getPendingFollowUps().length,
@@ -6168,9 +7104,10 @@ app.get('/debug/storage', (req, res) => {
     funnel_config: loadFunnelConfig(),
     emotion_lexicon: loadEmotionLexicon(),
     core_goals: loadCoreGoals(),
+    memory_index: loadMemoryIndex(),
+    strategy_profile: loadStrategyProfile(),
 
     decorative_mood: getTodayDecorativeMood(),
-    decorative_moods: loadDecorativeMoods(),
     current_mood: calculateCurrentMood(),
     coping_guidance: getCopingGuidance(),
     trends_7d: calculateEmotionTrends(7),
@@ -6206,259 +7143,24 @@ app.post('/funnel/run', (req, res) => {
   res.json(runEmotionFunnel(req.body || {}))
 })
 
-app.get('/funnel/config', checkAdmin, (req, res) => {
-  res.json({
-    ok: true,
-    config: loadFunnelConfig()
-  })
-})
-
-app.post('/funnel/config', checkAdmin, (req, res) => {
-  const config = req.body && req.body.config ? req.body.config : req.body
-  const ok = saveFunnelConfig(config)
-
-  res.json({
-    ok,
-    config: loadFunnelConfig()
-  })
-})
-
-app.get('/core-goals', checkAdmin, (req, res) => {
-  res.json({
-    ok: true,
-    core_goals: loadCoreGoals()
-  })
-})
-
-app.post('/core-goals', checkAdmin, (req, res) => {
-  const goals = req.body && req.body.goals ? req.body.goals : req.body
-
-  if (!Array.isArray(goals)) {
-    return res.status(400).json({
-      ok: false,
-      error: 'goals must be an array'
-    })
-  }
-
-  const normalized = goals.map(normalizeGoal)
-  const ok = saveCoreGoals(normalized)
-
-  res.json({
-    ok,
-    count: normalized.length,
-    core_goals: loadCoreGoals()
-  })
-})
-
 app.post('/goal/evaluate', (req, res) => {
   res.json(evaluateGoalRelevance(req.body || {}))
+})
+
+app.post('/memory/activate', (req, res) => {
+  res.json(activateMemoryFromText(req.body || {}))
+})
+
+app.post('/strategy/generate', (req, res) => {
+  res.json(generateInteractionStrategy(req.body || {}))
 })
 
 app.post('/simulate/event-impact', (req, res) => {
   res.json(simulateEventImpact(req.body || {}))
 })
 
-app.get('/chart-data', checkAdmin, (req, res) => {
-  res.json({
-    ok: true,
-    visual_history: getVisualHistory(toNumber(req.query.days, 30)),
-    behavior_analysis: getRelationshipBehaviorAnalysis(toNumber(req.query.days, 30)),
-    action_plan: getUnresolvedEventActionPlan({})
-  })
-})
-
-app.get('/unresolved/action-plan', checkAdmin, (req, res) => {
-  res.json(getUnresolvedEventActionPlan({
-    id: req.query.id,
-    keyword: req.query.keyword
-  }))
-})
-
-app.post('/mood/event', (req, res) => {
-  const event = req.body || {}
-  const result = saveEmotionFromInput(event, 'api_mood_event', 'api_mood_event')
-
-  res.json(result)
-})
-
-app.get('/debug/add-anxiety', (req, res) => {
-  const result = saveEmotionFromInput(
-    {
-      content: 'debug 手动写入一条强负面高唤醒情绪事件',
-      feeling_word: '焦虑',
-      valence: -0.9,
-      arousal: 0.95,
-      importance: 9,
-      pa_delta: -0.1,
-      na_delta: 0.45,
-      safety_delta: -0.08,
-      channel: 'primary',
-      need_repair: true
-    },
-    'debug',
-    'debug_add_anxiety'
-  )
-
-  res.json(result)
-})
-
-app.get('/debug/import-events-page', (req, res) => {
-  res.send(`
-<!DOCTYPE html>
-<html lang="zh">
-<head>
-<meta charset="UTF-8">
-<title>Import Emotion Events</title>
-<style>
-body{
-  background:#111;
-  color:#fff;
-  font-family:sans-serif;
-  padding:24px;
-}
-textarea{
-  width:100%;
-  height:420px;
-  background:#1f1f1f;
-  color:#fff;
-  border:1px solid #555;
-  border-radius:12px;
-  padding:12px;
-  box-sizing:border-box;
-}
-button{
-  margin-top:16px;
-  padding:12px 18px;
-  border:0;
-  border-radius:10px;
-  background:#6d28d9;
-  color:white;
-  font-size:16px;
-}
-pre{
-  white-space:pre-wrap;
-  background:#222;
-  padding:12px;
-  border-radius:12px;
-}
-</style>
-</head>
-<body>
-<h2>恢复情绪事件库</h2>
-<p>把你复制的 mood_events JSON 粘贴到下面。</p>
-<textarea id="events" placeholder="粘贴你的事件数组 JSON"></textarea>
-<br>
-<button onclick="importEvents()">恢复事件</button>
-<pre id="result"></pre>
-<script>
-async function importEvents(){
-  const raw = document.getElementById('events').value
-  let parsed
-
-  try {
-    parsed = JSON.parse(raw)
-  } catch (err) {
-    document.getElementById('result').textContent = 'JSON 格式错误：' + err.message
-    return
-  }
-
-  const res = await fetch('/debug/import-events', {
-    method:'POST',
-    headers:{
-      'Content-Type':'application/json'
-    },
-    body: JSON.stringify({
-      events: parsed,
-      mode: 'replace'
-    })
-  })
-
-  const data = await res.json()
-  document.getElementById('result').textContent = JSON.stringify(data, null, 2)
-}
-</script>
-</body>
-</html>
-  `)
-})
-
-app.post('/debug/import-events', (req, res) => {
-  try {
-    const body = req.body || {}
-    let incoming = body.events
-
-    if (
-      incoming &&
-      incoming.events &&
-      Array.isArray(incoming.events)
-    ) {
-      incoming = incoming.events
-    }
-
-    if (!Array.isArray(incoming)) {
-      return res.status(400).json({
-        ok: false,
-        error: 'events 必须是数组'
-      })
-    }
-
-    const cleaned = incoming
-      .filter(event => event && typeof event === 'object')
-      .map(event => normalizeMoodEvent({
-        id: event.id || randomUUID(),
-        type: event.type || 'emotion',
-        channel: event.channel || event.intensity_channel || null,
-        source: event.source || 'restored',
-        word: event.word || event.feeling_word || event.mood || '情绪波动',
-        content: event.content || '',
-        emotion_family: event.emotion_family,
-        valence: event.valence,
-        arousal: event.arousal,
-        importance: event.importance || 3,
-        pa_delta: event.pa_delta || 0,
-        na_delta: event.na_delta || 0,
-        safety_delta: event.safety_delta || 0,
-        trust_delta: event.trust_delta || 0,
-        closeness_delta: event.closeness_delta || 0,
-        need_repair: event.need_repair,
-        resolved: event.resolved,
-        resolved_at: event.resolved_at,
-        repair_note: event.repair_note,
-        goal_relevance: event.goal_relevance,
-        goal_matches: event.goal_matches,
-        ts: event.ts || Date.now()
-      }))
-
-    const mode = body.mode || 'replace'
-
-    let finalEvents
-
-    if (mode === 'append') {
-      finalEvents = loadMoodEvents().concat(cleaned)
-    } else {
-      finalEvents = cleaned
-    }
-
-    const ok = saveMoodEvents(finalEvents)
-
-    res.json({
-      ok,
-      mode,
-      imported: cleaned.length,
-      total: loadMoodEvents().length,
-      mood_file: MOOD_FILE,
-      current_mood: calculateCurrentMood(),
-      first_event: cleaned[0] || null,
-      last_event: cleaned[cleaned.length - 1] || null
-    })
-  } catch (err) {
-    console.log('import events error', err)
-
-    res.status(500).json({
-      ok: false,
-      error: String(err.message || err)
-    })
-  }
+app.post('/simulate/response-strategy', (req, res) => {
+  res.json(simulateResponseStrategy(req.body || {}))
 })
 
 app.get('/admin-data', checkAdmin, (req, res) => {
@@ -6510,6 +7212,14 @@ app.get('/admin-data', checkAdmin, (req, res) => {
       core_goals: {
         path: CORE_GOALS_FILE,
         data: loadCoreGoals()
+      },
+      memory_index: {
+        path: MEMORY_INDEX_FILE,
+        data: loadMemoryIndex()
+      },
+      strategy_profile: {
+        path: STRATEGY_PROFILE_FILE,
+        data: loadStrategyProfile()
       }
     },
     computed: {
@@ -6529,7 +7239,9 @@ app.get('/admin-data', checkAdmin, (req, res) => {
       coping_guidance: getCopingGuidance(),
       funnel_config: loadFunnelConfig(),
       emotion_lexicon_count: loadEmotionLexicon().length,
-      core_goals_count: loadCoreGoals().length
+      core_goals_count: loadCoreGoals().length,
+      memory_index_count: loadMemoryIndex().length,
+      strategy_count: loadStrategyProfile().strategies ? loadStrategyProfile().strategies.length : 0
     },
     storage: {
       data_dir: DATA_DIR,
@@ -6544,6 +7256,8 @@ app.get('/admin-data', checkAdmin, (req, res) => {
       funnel_config_file: FUNNEL_CONFIG_FILE,
       emotion_lexicon_file: EMOTION_LEXICON_FILE,
       core_goals_file: CORE_GOALS_FILE,
+      memory_index_file: MEMORY_INDEX_FILE,
+      strategy_profile_file: STRATEGY_PROFILE_FILE,
       backup_dir: BACKUP_DIR
     },
     time: new Date().toISOString()
@@ -6570,7 +7284,8 @@ app.post('/admin-save', checkAdmin, (req, res) => {
       key === 'milestones' ||
       key === 'decorative_moods' ||
       key === 'emotion_lexicon' ||
-      key === 'core_goals'
+      key === 'core_goals' ||
+      key === 'memory_index'
     ) {
       if (!Array.isArray(incoming)) {
         return res.status(400).json({
@@ -6584,7 +7299,8 @@ app.post('/admin-save', checkAdmin, (req, res) => {
       key === 'personality_state' ||
       key === 'relationship_state' ||
       key === 'emotion_weights' ||
-      key === 'funnel_config'
+      key === 'funnel_config' ||
+      key === 'strategy_profile'
     ) {
       if (!incoming || typeof incoming !== 'object' || Array.isArray(incoming)) {
         return res.status(400).json({
@@ -6614,9 +7330,6 @@ app.post('/admin-save', checkAdmin, (req, res) => {
       unresolved_action_plan: getUnresolvedEventActionPlan({}),
       decorative_mood: getTodayDecorativeMood(),
       coping_guidance: getCopingGuidance(),
-      funnel_config: loadFunnelConfig(),
-      emotion_lexicon_count: loadEmotionLexicon().length,
-      core_goals_count: loadCoreGoals().length,
       backups: listBackups()
     })
   } catch (err) {
@@ -6677,13 +7390,11 @@ app.get('/admin/backups', checkAdmin, (req, res) => {
 
 app.post('/admin/create-backup', checkAdmin, (req, res) => {
   const label = req.body && req.body.label ? req.body.label : 'admin'
-
   res.json(createBackup(label))
 })
 
 app.get('/admin/create-backup-now', checkAdmin, (req, res) => {
   const label = req.query.label || 'browser'
-
   res.json(createBackup(label))
 })
 
@@ -6720,41 +7431,24 @@ app.get('/reports/monthly', checkAdmin, (req, res) => {
   res.json(getMonthlyRelationshipReport())
 })
 
-app.get('/milestones', checkAdmin, (req, res) => {
-  res.json({
-    ok: true,
-    milestones: loadMilestones()
-  })
-})
-
-app.post('/milestones', checkAdmin, (req, res) => {
-  res.json(addMilestone(req.body || {}))
-})
-
-app.delete('/milestones', checkAdmin, (req, res) => {
-  res.json(deleteMilestone(req.body || {}))
-})
-
 app.get('/mcp/tools', (req, res) => {
   res.json({
     note: 'Debug only. Kelivo should connect to /mcp for Streamable HTTP or /sse for SSE.',
     architecture: {
       personality_state: 'AI 的人格体质，长期稳定，不随普通聊天乱变',
-      relationship_state: '你们之间的关系底色，包括安全感、信任感、亲近感',
+      relationship_state: '关系底色，包括安全感、信任感、亲近感',
       mood_events: '每一次具体发生的情绪事件',
       relationship_events: '每一次关系行为事件，例如安抚、修复、争论、靠近',
       milestones: '关系纪念节点',
       emotion_weights: '情绪权重校准参数',
-      decorative_moods: '装饰心情池，每天选取一条轻量背景心情',
-      funnel_config: '情绪漏斗配置，用于自动扫描用户消息并决定是否写入情绪事件',
-      emotion_lexicon: '轻量情绪词典，用于更细腻地识别情绪词和 70/30 融合评分',
+      decorative_moods: '装饰心情池',
+      funnel_config: '情绪漏斗配置',
+      emotion_lexicon: '轻量情绪词典，用于 70/30 融合评分',
       core_goals: 'OCC 核心目标系统，用于判断事件为什么重要',
-      alma_profile: 'ALMA 人格阈值和情绪 peak 系统，用于决定普通事件被克制还是核心事件被放大',
-      onset: '情绪渐起机制，避免事件瞬间满值',
-      bou: '均值回归机制，让情绪逐渐回到人格基线',
-      escape_valve: '持续高负面时的逃逸阀，防止被负面事件永久困住',
-      coping_style: '高负面情绪时的应对风格',
-      current_mood: '由人格体质、关系底色、事件库、趋势统计、装饰心情、情绪漏斗、情绪词典、核心目标、ALMA、onset、BOU、逃逸阀和 coping 综合计算出的当前状态'
+      alma_profile: 'ALMA 人格阈值和情绪 peak 系统',
+      memory_index: '记忆认知索引，用于判断当前消息牵动了哪些旧记忆',
+      strategy_profile: '互动策略配置，用于决定当前应该怎么回应',
+      current_mood: '由人格、关系、事件、目标、记忆、策略、趋势、BOU、逃逸阀综合计算出的当前状态'
     }
   })
 })
@@ -6824,6 +7518,8 @@ app.post('/chat', async (req, res) => {
       decorative_mood: getTodayDecorativeMood(),
       coping_guidance: getCopingGuidance(),
       core_goals: loadCoreGoals(),
+      memory_index: loadMemoryIndex(),
+      strategy_profile: loadStrategyProfile(),
       weekly_report: getWeeklyEmotionReport(),
       monthly_report: getMonthlyRelationshipReport()
     })
@@ -6839,5 +7535,5 @@ app.post('/chat', async (req, res) => {
 const PORT = process.env.PORT || 3000
 
 app.listen(PORT, () => {
-  console.log('emotion mcp server running psychological-state-v10-occ-alma-core-goals')
+  console.log('emotion mcp server running psychological-state-v12-memory-activation-interaction-strategy')
 })
