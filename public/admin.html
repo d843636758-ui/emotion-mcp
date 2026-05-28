@@ -1,0 +1,456 @@
+<!DOCTYPE html>
+<html lang="zh">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <title>Emotion MCP Admin</title>
+
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      padding: 18px;
+      background: #101014;
+      color: #f7f7f7;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    h1 {
+      margin: 0 0 12px;
+      font-size: 24px;
+    }
+
+    h2 {
+      margin-top: 0;
+      font-size: 18px;
+    }
+
+    .panel {
+      background: #181820;
+      border: 1px solid #2c2c36;
+      border-radius: 16px;
+      padding: 14px;
+      margin-bottom: 14px;
+    }
+
+    .row {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    input {
+      width: 100%;
+      padding: 12px;
+      border-radius: 12px;
+      border: 1px solid #3a3a46;
+      background: #0f0f14;
+      color: white;
+      font-size: 15px;
+    }
+
+    button {
+      border: 0;
+      border-radius: 12px;
+      padding: 10px 14px;
+      background: #6d28d9;
+      color: white;
+      font-size: 14px;
+      cursor: pointer;
+    }
+
+    button.secondary {
+      background: #334155;
+    }
+
+    button.danger {
+      background: #be123c;
+    }
+
+    button.good {
+      background: #047857;
+    }
+
+    .tabs {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+
+    .tabs button {
+      background: #272734;
+    }
+
+    .tabs button.active {
+      background: #7c3aed;
+    }
+
+    textarea {
+      width: 100%;
+      min-height: 420px;
+      resize: vertical;
+      padding: 12px;
+      border-radius: 14px;
+      border: 1px solid #3a3a46;
+      background: #0f0f14;
+      color: #e5e7eb;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 13px;
+      line-height: 1.55;
+    }
+
+    pre {
+      white-space: pre-wrap;
+      overflow-wrap: break-word;
+      background: #0f0f14;
+      border: 1px solid #2c2c36;
+      padding: 12px;
+      border-radius: 14px;
+      max-height: 420px;
+      overflow: auto;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 14px;
+    }
+
+    @media (min-width: 900px) {
+      .grid.two {
+        grid-template-columns: 1fr 1fr;
+      }
+    }
+
+    .muted {
+      color: #a1a1aa;
+      font-size: 13px;
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 4px 8px;
+      border-radius: 999px;
+      background: #272734;
+      color: #ddd;
+      font-size: 12px;
+      margin: 2px;
+    }
+
+    .status {
+      color: #a7f3d0;
+      font-size: 13px;
+    }
+
+    .error {
+      color: #fecaca;
+      font-size: 13px;
+    }
+  </style>
+</head>
+
+<body>
+  <h1>Emotion MCP Admin</h1>
+
+  <div class="panel">
+    <h2>管理员口令</h2>
+    <p class="muted">输入 Zeabur 里设置的 ADMIN_TOKEN。口令只保存在当前浏览器 localStorage。</p>
+    <input id="tokenInput" placeholder="ADMIN_TOKEN" />
+    <div class="row" style="margin-top:10px;">
+      <button onclick="saveToken()">保存口令</button>
+      <button class="secondary" onclick="loadAll()">刷新全部数据</button>
+      <button class="secondary" onclick="downloadBackup()">下载完整备份</button>
+    </div>
+    <p id="tokenStatus" class="status"></p>
+  </div>
+
+  <div class="grid two">
+    <div class="panel">
+      <h2>当前状态</h2>
+      <div id="moodBadges"></div>
+      <pre id="currentMood">等待加载...</pre>
+    </div>
+
+    <div class="panel">
+      <h2>趋势与关系模式</h2>
+      <pre id="computedData">等待加载...</pre>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>存储路径</h2>
+    <pre id="storageData">等待加载...</pre>
+  </div>
+
+  <div class="panel">
+    <h2>数据文件编辑</h2>
+
+    <div class="tabs">
+      <button id="tab-memory" onclick="selectTab('memory')">memory</button>
+      <button id="tab-mood_events" onclick="selectTab('mood_events')">mood_events</button>
+      <button id="tab-relationship_events" onclick="selectTab('relationship_events')">relationship_events</button>
+      <button id="tab-personality_state" onclick="selectTab('personality_state')">personality_state</button>
+      <button id="tab-relationship_state" onclick="selectTab('relationship_state')">relationship_state</button>
+    </div>
+
+    <p class="muted">
+      修改前建议先下载完整备份。保存时会校验 JSON 格式。
+    </p>
+
+    <textarea id="editor"></textarea>
+
+    <div class="row" style="margin-top:10px;">
+      <button class="good" onclick="saveCurrent()">保存当前文件</button>
+      <button class="secondary" onclick="formatEditor()">格式化 JSON</button>
+      <button class="secondary" onclick="loadAll()">放弃修改并刷新</button>
+      <button class="danger" onclick="resetLastMoodSnapshot()">清除情绪惯性快照</button>
+      <button class="secondary" onclick="recalculateMood()">重算当前 mood</button>
+    </div>
+
+    <p id="saveStatus" class="status"></p>
+    <p id="saveError" class="error"></p>
+  </div>
+
+  <script>
+    let allData = null
+    let currentKey = 'mood_events'
+
+    const fileKeys = [
+      'memory',
+      'mood_events',
+      'relationship_events',
+      'personality_state',
+      'relationship_state'
+    ]
+
+    function getToken() {
+      return localStorage.getItem('emotion_admin_token') || ''
+    }
+
+    function saveToken() {
+      const token = document.getElementById('tokenInput').value.trim()
+      localStorage.setItem('emotion_admin_token', token)
+      document.getElementById('tokenStatus').textContent = '口令已保存'
+      loadAll()
+    }
+
+    function headers() {
+      return {
+        'Content-Type': 'application/json',
+        'x-admin-token': getToken()
+      }
+    }
+
+    function pretty(value) {
+      return JSON.stringify(value, null, 2)
+    }
+
+    function setText(id, value) {
+      document.getElementById(id).textContent = typeof value === 'string' ? value : pretty(value)
+    }
+
+    function setStatus(message) {
+      document.getElementById('saveStatus').textContent = message || ''
+      document.getElementById('saveError').textContent = ''
+    }
+
+    function setError(message) {
+      document.getElementById('saveError').textContent = message || ''
+      document.getElementById('saveStatus').textContent = ''
+    }
+
+    async function loadAll() {
+      try {
+        const res = await fetch('/admin-data?days=7', {
+          headers: {
+            'x-admin-token': getToken()
+          }
+        })
+
+        const data = await res.json()
+
+        if (!data.ok) {
+          setError(data.error || '加载失败')
+          return
+        }
+
+        allData = data
+
+        renderDashboard()
+        selectTab(currentKey)
+        setStatus('数据已刷新 ' + new Date().toLocaleString())
+      } catch (err) {
+        setError('加载失败：' + err.message)
+      }
+    }
+
+    function renderDashboard() {
+      if (!allData) return
+
+      const mood = allData.computed.current_mood
+
+      const badges = [
+        ['mood', mood.mood],
+        ['PA', mood.pa],
+        ['NA', mood.na],
+        ['safety', mood.relationship_safety],
+        ['trust', mood.relationship_trust],
+        ['closeness', mood.relationship_closeness],
+        ['events', mood.events_count],
+        ['unresolved', mood.unresolved_events_count]
+      ]
+
+      document.getElementById('moodBadges').innerHTML = badges.map(item => {
+        return `<span class="badge">${item[0]}: ${item[1]}</span>`
+      }).join('')
+
+      setText('currentMood', mood)
+
+      setText('computedData', {
+        emotion_trends: allData.computed.emotion_trends,
+        relationship_patterns: allData.computed.relationship_patterns
+      })
+
+      setText('storageData', allData.storage)
+    }
+
+    function selectTab(key) {
+      currentKey = key
+
+      for (const item of fileKeys) {
+        const el = document.getElementById('tab-' + item)
+        if (el) {
+          el.classList.toggle('active', item === key)
+        }
+      }
+
+      if (!allData || !allData.files || !allData.files[key]) {
+        document.getElementById('editor').value = ''
+        return
+      }
+
+      document.getElementById('editor').value = pretty(allData.files[key].data)
+      setStatus('正在编辑 ' + key)
+    }
+
+    function formatEditor() {
+      try {
+        const parsed = JSON.parse(document.getElementById('editor').value)
+        document.getElementById('editor').value = pretty(parsed)
+        setStatus('JSON 已格式化')
+      } catch (err) {
+        setError('JSON 格式错误：' + err.message)
+      }
+    }
+
+    async function saveCurrent() {
+      try {
+        const raw = document.getElementById('editor').value
+        const parsed = JSON.parse(raw)
+
+        const sure = confirm('确认保存 ' + currentKey + ' 吗？建议你已经下载过备份。')
+
+        if (!sure) {
+          return
+        }
+
+        const res = await fetch('/admin-save', {
+          method: 'POST',
+          headers: headers(),
+          body: JSON.stringify({
+            key: currentKey,
+            data: parsed
+          })
+        })
+
+        const data = await res.json()
+
+        if (!data.ok) {
+          setError(data.error || '保存失败')
+          return
+        }
+
+        setStatus('保存成功：' + currentKey)
+        await loadAll()
+      } catch (err) {
+        setError('保存失败：' + err.message)
+      }
+    }
+
+    function downloadBackup() {
+      if (!allData) {
+        setError('还没有加载数据')
+        return
+      }
+
+      const blob = new Blob([pretty(allData)], {
+        type: 'application/json'
+      })
+
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+
+      a.href = url
+      a.download = 'emotion-mcp-backup-' + new Date().toISOString().replace(/[:.]/g, '-') + '.json'
+      a.click()
+
+      URL.revokeObjectURL(url)
+      setStatus('备份已下载')
+    }
+
+    async function resetLastMoodSnapshot() {
+      const sure = confirm('确认清除 last_mood_snapshot 吗？这会减少情绪惯性影响，但不会删除事件。')
+
+      if (!sure) return
+
+      const res = await fetch('/admin-reset-last-mood-snapshot', {
+        method: 'POST',
+        headers: headers(),
+        body: JSON.stringify({})
+      })
+
+      const data = await res.json()
+
+      if (!data.ok) {
+        setError(data.error || '操作失败')
+        return
+      }
+
+      setStatus('已清除情绪惯性快照')
+      await loadAll()
+    }
+
+    async function recalculateMood() {
+      const res = await fetch('/admin-recalculate', {
+        method: 'POST',
+        headers: headers(),
+        body: JSON.stringify({})
+      })
+
+      const data = await res.json()
+
+      if (!data.ok) {
+        setError(data.error || '重算失败')
+        return
+      }
+
+      setStatus('已重算当前 mood')
+      await loadAll()
+    }
+
+    document.getElementById('tokenInput').value = getToken()
+
+    if (getToken()) {
+      loadAll()
+    }
+  </script>
+</body>
+
+</html>
