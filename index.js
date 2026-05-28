@@ -1047,7 +1047,8 @@ function calculateRelationshipRepairPatterns(days = 30) {
     event.type === 'repair' ||
     event.type === 'comfort' ||
     event.subtype === 'verbal_reassurance' ||
-    event.subtype === 'misunderstanding_clearance'
+    event.subtype === 'misunderstanding_clearance' ||
+    event.subtype === 'emotional_validation'
   )
 
   const grouped = {}
@@ -1267,18 +1268,370 @@ function getCareSuggestions() {
   }
 }
 
-function calculateEmotionTrendsForPrompt() {
-  return calculateEmotionTrends(7)
+function getVisualHistory(days = 30) {
+  const moodEvents = loadMoodEvents()
+  const relationshipEvents = loadRelationshipEvents()
+  const cutoff = Date.now() - days * 24 * 3600000
+
+  const recentMoodEvents = moodEvents.filter(event => Number(event.ts || 0) >= cutoff)
+  const recentRelationshipEvents = relationshipEvents.filter(event => Number(event.ts || 0) >= cutoff)
+
+  const buckets = {}
+
+  for (let i = days - 1; i >= 0; i -= 1) {
+    const date = new Date(Date.now() - i * 24 * 3600000).toISOString().slice(0, 10)
+
+    buckets[date] = {
+      date,
+      pa_sum: 0,
+      na_sum: 0,
+      pa_count: 0,
+      na_count: 0,
+      positive_count: 0,
+      negative_count: 0,
+      unresolved_count: 0,
+      resolved_count: 0,
+      safety_delta: 0,
+      trust_delta: 0,
+      closeness_delta: 0,
+      relationship_event_count: 0,
+      mood_event_count: 0
+    }
+  }
+
+  for (const event of recentMoodEvents) {
+    const date = new Date(event.ts).toISOString().slice(0, 10)
+
+    if (!buckets[date]) {
+      continue
+    }
+
+    const valence = toNumber(event.valence, 0)
+    const arousal = toNumber(event.arousal, 0.3)
+
+    const pa = Math.max(0, valence) * arousal
+    const na = Math.max(0, -valence) * arousal
+
+    buckets[date].pa_sum += pa
+    buckets[date].na_sum += na
+    buckets[date].pa_count += 1
+    buckets[date].na_count += 1
+    buckets[date].mood_event_count += 1
+
+    if (valence > 0.1) {
+      buckets[date].positive_count += 1
+    }
+
+    if (valence < -0.1) {
+      buckets[date].negative_count += 1
+    }
+
+    if (event.need_repair && event.resolved !== true) {
+      buckets[date].unresolved_count += 1
+    }
+
+    if (event.resolved === true) {
+      buckets[date].resolved_count += 1
+    }
+  }
+
+  for (const event of recentRelationshipEvents) {
+    const date = new Date(event.ts).toISOString().slice(0, 10)
+
+    if (!buckets[date]) {
+      continue
+    }
+
+    buckets[date].safety_delta += toNumber(event.effect && event.effect.safety_delta, 0)
+    buckets[date].trust_delta += toNumber(event.effect && event.effect.trust_delta, 0)
+    buckets[date].closeness_delta += toNumber(event.effect && event.effect.closeness_delta, 0)
+    buckets[date].relationship_event_count += 1
+  }
+
+  let safety = loadRelationshipState().safety
+  let trust = loadRelationshipState().trust
+  let closeness = loadRelationshipState().closeness
+
+  const daily = Object.values(buckets).map(item => {
+    safety = clamp(safety + item.safety_delta)
+    trust = clamp(trust + item.trust_delta)
+    closeness = clamp(closeness + item.closeness_delta)
+
+    return {
+      date: item.date,
+      pa: item.pa_count ? Number((item.pa_sum / item.pa_count).toFixed(3)) : 0,
+      na: item.na_count ? Number((item.na_sum / item.na_count).toFixed(3)) : 0,
+      positive_count: item.positive_count,
+      negative_count: item.negative_count,
+      unresolved_count: item.unresolved_count,
+      resolved_count: item.resolved_count,
+      mood_event_count: item.mood_event_count,
+      relationship_event_count: item.relationship_event_count,
+      safety: Number(safety.toFixed(3)),
+      trust: Number(trust.toFixed(3)),
+      closeness: Number(closeness.toFixed(3))
+    }
+  })
+
+  return {
+    days,
+    daily,
+    series: {
+      dates: daily.map(item => item.date),
+      pa: daily.map(item => item.pa),
+      na: daily.map(item => item.na),
+      safety: daily.map(item => item.safety),
+      trust: daily.map(item => item.trust),
+      closeness: daily.map(item => item.closeness),
+      positive_count: daily.map(item => item.positive_count),
+      negative_count: daily.map(item => item.negative_count),
+      unresolved_count: daily.map(item => item.unresolved_count),
+      resolved_count: daily.map(item => item.resolved_count)
+    }
+  }
 }
 
-function calculateRelationshipPatternsForPrompt() {
-  return calculateRelationshipPatterns(30)
+function getRelationshipBehaviorAnalysis(days = 30) {
+  const patterns = calculateRelationshipPatterns(days)
+  const repair = calculateRelationshipRepairPatterns(days)
+  const events = loadRelationshipEvents()
+  const cutoff = Date.now() - days * 24 * 3600000
+  const recent = events.filter(event => Number(event.ts || 0) >= cutoff)
+
+  const behaviorScores = {}
+
+  for (const event of recent) {
+    const key = `${event.type || 'general'}:${event.subtype || 'none'}`
+
+    if (!behaviorScores[key]) {
+      behaviorScores[key] = {
+        behavior: key,
+        count: 0,
+        safety_delta: 0,
+        trust_delta: 0,
+        closeness_delta: 0,
+        examples: [],
+        advice: event.interaction_advice || ''
+      }
+    }
+
+    behaviorScores[key].count += 1
+    behaviorScores[key].safety_delta += toNumber(event.effect && event.effect.safety_delta, 0)
+    behaviorScores[key].trust_delta += toNumber(event.effect && event.effect.trust_delta, 0)
+    behaviorScores[key].closeness_delta += toNumber(event.effect && event.effect.closeness_delta, 0)
+
+    if (behaviorScores[key].examples.length < 3) {
+      behaviorScores[key].examples.push({
+        content: event.content,
+        ts: event.ts
+      })
+    }
+  }
+
+  const ranked = Object.values(behaviorScores)
+    .map(item => ({
+      ...item,
+      safety_delta: Number(item.safety_delta.toFixed(3)),
+      trust_delta: Number(item.trust_delta.toFixed(3)),
+      closeness_delta: Number(item.closeness_delta.toFixed(3)),
+      total_effect: Number((item.safety_delta + item.trust_delta + item.closeness_delta).toFixed(3))
+    }))
+    .sort((a, b) => b.total_effect - a.total_effect)
+
+  const helpful = ranked.filter(item => item.total_effect > 0).slice(0, 5)
+  const harmful = ranked.filter(item => item.total_effect < 0).reverse().slice(0, 5)
+
+  return {
+    days,
+    relationship_patterns: patterns,
+    repair_patterns: repair,
+    helpful_behaviors: helpful,
+    risky_behaviors: harmful,
+    behavior_scores: ranked,
+    summary: {
+      best_behavior: helpful[0] ? helpful[0].behavior : null,
+      riskiest_behavior: harmful[0] ? harmful[0].behavior : null,
+      advice: helpful[0]
+        ? `未来可以更多使用 ${helpful[0].behavior}，因为它对关系状态的正向影响最高。`
+        : '暂无足够数据判断最有效关系行为。'
+    }
+  }
+}
+
+function simulateUnresolvedEventRepair(input = {}) {
+  const events = loadMoodEvents()
+  const unresolved = getUnresolvedEvents(events)
+
+  let target = null
+
+  if (input.id) {
+    target = unresolved.find(event => event.id === input.id)
+  }
+
+  if (!target && input.keyword) {
+    target = unresolved.find(event => {
+      const text = `${event.word || ''} ${event.content || ''}`
+      return text.includes(String(input.keyword))
+    })
+  }
+
+  if (!target) {
+    target = unresolved[0] || null
+  }
+
+  if (!target) {
+    return {
+      ok: true,
+      has_unresolved_event: false,
+      message: '当前没有未解决事件',
+      action_plan: getUnresolvedEventActionPlan({})
+    }
+  }
+
+  const mood = calculateCurrentMood()
+  const relationship = loadRelationshipState()
+  const repairPatterns = calculateRelationshipRepairPatterns(30)
+
+  const risks = []
+
+  if (toNumber(target.arousal, 0) >= 0.7) {
+    risks.push('该事件唤醒度较高，直接追问容易加剧情绪。')
+  }
+
+  if (relationship.safety < 0.6) {
+    risks.push('当前关系安全感偏低，需要先确认稳定关系，再讨论事实。')
+  }
+
+  if (target.emotion_family === 'hurt') {
+    risks.push('该事件带有委屈或受伤色彩，需要先承认感受。')
+  }
+
+  if (target.emotion_family === 'anxiety') {
+    risks.push('该事件带有焦虑色彩，需要减少不确定性。')
+  }
+
+  const wrongMoves = [
+    '直接否认对方感受',
+    '急着讲道理',
+    '用冷处理等待对方自己恢复',
+    '把修复变成辩解',
+    '过度承诺但之后无法持续'
+  ]
+
+  const recommendedMoves = [
+    '先确认自己看见了这件事造成的影响',
+    '用一句明确的话稳定关系安全感',
+    '再解释事实或误会',
+    '给出一个可执行的小承诺',
+    '在合适时间点做轻度跟进'
+  ]
+
+  const bestPattern = repairPatterns.best_repair_patterns[0] || null
+
+  return {
+    ok: true,
+    has_unresolved_event: true,
+    target_event: target,
+    current_mood: mood,
+    relationship,
+    risk_points: risks,
+    wrong_moves: wrongMoves,
+    recommended_moves: recommendedMoves,
+    best_past_repair_pattern: bestPattern,
+    simulated_paths: [
+      {
+        path: '只解释事实',
+        likely_result: '可能降低误会，但安全感修复不足。',
+        risk: 'medium'
+      },
+      {
+        path: '先安抚再解释',
+        likely_result: '更可能降低 NA，并提高 safety 和 trust。',
+        risk: 'low'
+      },
+      {
+        path: '沉默或跳过',
+        likely_result: '未解决事件可能继续累积，后续更容易被触发。',
+        risk: 'high'
+      }
+    ],
+    follow_up: {
+      after_hours: 12,
+      action: '轻度确认是否已经缓过来',
+      note: '跟进不要像审问，要像自然地伸手接一下。'
+    }
+  }
+}
+
+function getUnresolvedEventActionPlan(input = {}) {
+  const simulation = simulateUnresolvedEventRepair(input)
+
+  if (!simulation.has_unresolved_event) {
+    return {
+      ok: true,
+      has_unresolved_event: false,
+      plan: [
+        {
+          step: 1,
+          title: '保持稳定陪伴',
+          detail: '当前没有明显未解决事件，不需要过度修复。'
+        }
+      ]
+    }
+  }
+
+  const event = simulation.target_event
+
+  return {
+    ok: true,
+    has_unresolved_event: true,
+    event_id: event.id,
+    event_word: event.word,
+    event_family: event.emotion_family,
+    event_content: event.content,
+    plan: [
+      {
+        step: 1,
+        title: '承认影响',
+        detail: `先承认这件事确实造成了 ${event.word || '情绪波动'}，不要急着否认。`
+      },
+      {
+        step: 2,
+        title: '稳定关系',
+        detail: '明确表达关系没有撤离，对方不是负担，自己仍然在。'
+      },
+      {
+        step: 3,
+        title: '解释事实',
+        detail: '用简短清楚的方式解释事实，避免把解释变成辩解。'
+      },
+      {
+        step: 4,
+        title: '给出小承诺',
+        detail: '承诺一个具体可执行的小动作，比如之后遇到类似情况会先说明。'
+      },
+      {
+        step: 5,
+        title: '跟进',
+        detail: '在 6 到 12 小时后做一次轻度确认，不翻旧账，只确认是否缓和。'
+      }
+    ],
+    avoid: simulation.wrong_moves,
+    recommended: simulation.recommended_moves,
+    follow_up: simulation.follow_up,
+    expected_effect: {
+      safety_delta: 0.06,
+      trust_delta: 0.04,
+      closeness_delta: 0.02,
+      unresolved_pressure: '下降'
+    }
+  }
 }
 
 function buildMoodPrompt() {
   const mood = calculateCurrentMood()
-  const trends = calculateEmotionTrendsForPrompt()
-  const patterns = calculateRelationshipPatternsForPrompt()
+  const trends = calculateEmotionTrends(7)
+  const patterns = calculateRelationshipPatterns(30)
   const forecast = getEmotionalForecast(24)
   const care = getCareSuggestions()
 
@@ -1907,18 +2260,33 @@ function createMcpServer() {
         days: flexibleNumber.optional().describe('统计最近多少天，默认 7')
       }
     },
-    async input => {
-      const days = toNumber(input.days, 7)
+    async input => ({
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify(calculateEmotionTrends(toNumber(input.days, 7)), null, 2)
+        }
+      ]
+    })
+  )
 
-      return {
-        content: [
-          {
-            type: 'text',
-            text: JSON.stringify(calculateEmotionTrends(days), null, 2)
-          }
-        ]
+  server.registerTool(
+    'get_visual_history',
+    {
+      title: 'Get Visual History',
+      description: '获取用于可视化图表的数据，包括 PA、NA、关系安全感、信任感和亲近感曲线',
+      inputSchema: {
+        days: flexibleNumber.optional().describe('统计最近多少天，默认 30')
       }
-    }
+    },
+    async input => ({
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify(getVisualHistory(toNumber(input.days, 30)), null, 2)
+        }
+      ]
+    })
   )
 
   server.registerTool(
@@ -1930,18 +2298,14 @@ function createMcpServer() {
         days: flexibleNumber.optional().describe('统计最近多少天，默认 30')
       }
     },
-    async input => {
-      const days = toNumber(input.days, 30)
-
-      return {
-        content: [
-          {
-            type: 'text',
-            text: JSON.stringify(calculateRelationshipPatterns(days), null, 2)
-          }
-        ]
-      }
-    }
+    async input => ({
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify(calculateRelationshipPatterns(toNumber(input.days, 30)), null, 2)
+        }
+      ]
+    })
   )
 
   server.registerTool(
@@ -1953,18 +2317,33 @@ function createMcpServer() {
         days: flexibleNumber.optional().describe('统计最近多少天，默认 30')
       }
     },
-    async input => {
-      const days = toNumber(input.days, 30)
+    async input => ({
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify(calculateRelationshipRepairPatterns(toNumber(input.days, 30)), null, 2)
+        }
+      ]
+    })
+  )
 
-      return {
-        content: [
-          {
-            type: 'text',
-            text: JSON.stringify(calculateRelationshipRepairPatterns(days), null, 2)
-          }
-        ]
+  server.registerTool(
+    'get_relationship_behavior_analysis',
+    {
+      title: 'Get Relationship Behavior Analysis',
+      description: '把行为事件与具体关系动态结合，分析哪些行为改善关系，哪些行为造成关系承压',
+      inputSchema: {
+        days: flexibleNumber.optional().describe('统计最近多少天，默认 30')
       }
-    }
+    },
+    async input => ({
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify(getRelationshipBehaviorAnalysis(toNumber(input.days, 30)), null, 2)
+        }
+      ]
+    })
   )
 
   server.registerTool(
@@ -1976,18 +2355,14 @@ function createMcpServer() {
         hours: flexibleNumber.optional().describe('预测未来多少小时，默认 24')
       }
     },
-    async input => {
-      const hours = toNumber(input.hours, 24)
-
-      return {
-        content: [
-          {
-            type: 'text',
-            text: JSON.stringify(getEmotionalForecast(hours), null, 2)
-          }
-        ]
-      }
-    }
+    async input => ({
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify(getEmotionalForecast(toNumber(input.hours, 24)), null, 2)
+        }
+      ]
+    })
   )
 
   server.registerTool(
@@ -2002,6 +2377,46 @@ function createMcpServer() {
         {
           type: 'text',
           text: JSON.stringify(getCareSuggestions(), null, 2)
+        }
+      ]
+    })
+  )
+
+  server.registerTool(
+    'simulate_unresolved_event_repair',
+    {
+      title: 'Simulate Unresolved Event Repair',
+      description: '针对未解决事件进行修复场景模拟，给出风险、错误处理方式、推荐处理方式和跟进节点',
+      inputSchema: {
+        id: z.string().optional().describe('未解决事件 id'),
+        keyword: z.string().optional().describe('关键词')
+      }
+    },
+    async input => ({
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify(simulateUnresolvedEventRepair(input), null, 2)
+        }
+      ]
+    })
+  )
+
+  server.registerTool(
+    'get_unresolved_event_action_plan',
+    {
+      title: 'Get Unresolved Event Action Plan',
+      description: '针对未解决问题生成清晰行动指南',
+      inputSchema: {
+        id: z.string().optional().describe('未解决事件 id'),
+        keyword: z.string().optional().describe('关键词')
+      }
+    },
+    async input => ({
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify(getUnresolvedEventActionPlan(input), null, 2)
         }
       ]
     })
@@ -2380,7 +2795,7 @@ app.get('/health', (req, res) => {
     ok: true,
     name: 'emotion-system',
     sdk: '1.17.5',
-    formula: 'psychological-state-v4-forecast-care',
+    formula: 'psychological-state-v5-visual-simulation',
     data_dir: DATA_DIR,
     mood_file: MOOD_FILE,
     personality_file: PERSONALITY_FILE,
@@ -2419,7 +2834,10 @@ app.get('/debug/storage', (req, res) => {
     relationship_patterns_30d: calculateRelationshipPatterns(30),
     repair_patterns_30d: calculateRelationshipRepairPatterns(30),
     emotional_forecast_24h: getEmotionalForecast(24),
-    care_suggestions: getCareSuggestions()
+    care_suggestions: getCareSuggestions(),
+    visual_history_30d: getVisualHistory(30),
+    relationship_behavior_analysis_30d: getRelationshipBehaviorAnalysis(30),
+    unresolved_action_plan: getUnresolvedEventActionPlan({})
   })
 })
 
@@ -2437,6 +2855,22 @@ app.get('/relationship/events', (req, res) => {
 
 app.get('/memory', (req, res) => {
   res.json(loadMemory())
+})
+
+app.get('/chart-data', checkAdmin, (req, res) => {
+  res.json({
+    ok: true,
+    visual_history: getVisualHistory(toNumber(req.query.days, 30)),
+    behavior_analysis: getRelationshipBehaviorAnalysis(toNumber(req.query.days, 30)),
+    action_plan: getUnresolvedEventActionPlan({})
+  })
+})
+
+app.get('/unresolved/action-plan', checkAdmin, (req, res) => {
+  res.json(getUnresolvedEventActionPlan({
+    id: req.query.id,
+    keyword: req.query.keyword
+  }))
 })
 
 app.post('/mood/event', (req, res) => {
@@ -2655,7 +3089,10 @@ app.get('/admin-data', checkAdmin, (req, res) => {
       relationship_patterns: calculateRelationshipPatterns(30),
       repair_patterns: calculateRelationshipRepairPatterns(30),
       emotional_forecast: getEmotionalForecast(24),
-      care_suggestions: getCareSuggestions()
+      care_suggestions: getCareSuggestions(),
+      visual_history: getVisualHistory(30),
+      relationship_behavior_analysis: getRelationshipBehaviorAnalysis(30),
+      unresolved_action_plan: getUnresolvedEventActionPlan({})
     },
     storage: {
       data_dir: DATA_DIR,
@@ -2719,7 +3156,10 @@ app.post('/admin-save', checkAdmin, (req, res) => {
       relationship_patterns: calculateRelationshipPatterns(30),
       repair_patterns: calculateRelationshipRepairPatterns(30),
       emotional_forecast: getEmotionalForecast(24),
-      care_suggestions: getCareSuggestions()
+      care_suggestions: getCareSuggestions(),
+      visual_history: getVisualHistory(30),
+      relationship_behavior_analysis: getRelationshipBehaviorAnalysis(30),
+      unresolved_action_plan: getUnresolvedEventActionPlan({})
     })
   } catch (err) {
     res.status(500).json({
@@ -2778,7 +3218,7 @@ app.get('/mcp/tools', (req, res) => {
       relationship_state: '你们之间的关系底色，包括安全感、信任感、亲近感',
       mood_events: '每一次具体发生的情绪事件',
       relationship_events: '每一次关系行为事件，例如安抚、修复、争论、靠近',
-      current_mood: '由人格体质、关系底色、事件库、趋势统计、未来预测综合计算出的当前状态'
+      current_mood: '由人格体质、关系底色、事件库、趋势统计、未来预测和修复模拟综合计算出的当前状态'
     },
     tools: [
       { name: 'current_mood', description: '实时获取当前综合心理状态' },
@@ -2791,10 +3231,14 @@ app.get('/mcp/tools', (req, res) => {
       { name: 'add_detailed_relationship_event', description: '记录细化关系行为事件' },
       { name: 'list_relationship_events', description: '列出关系行为事件' },
       { name: 'get_emotion_trends', description: '统计长期情绪趋势' },
+      { name: 'get_visual_history', description: '获取可视化图表数据' },
       { name: 'get_relationship_patterns', description: '分析关系动态模式' },
       { name: 'get_relationship_repair_patterns', description: '分析有效安抚与修复方式' },
+      { name: 'get_relationship_behavior_analysis', description: '分析行为事件如何影响关系动态' },
       { name: 'get_emotional_forecast', description: '预测未来情绪波动和安抚节点' },
       { name: 'get_care_suggestions', description: '生成未来互动建议' },
+      { name: 'simulate_unresolved_event_repair', description: '模拟未解决事件的修复路径' },
+      { name: 'get_unresolved_event_action_plan', description: '生成未解决事件行动指南' },
       { name: 'get_personality_profile', description: '读取人格基线' },
       { name: 'set_personality_profile', description: '设置人格基线' },
       { name: 'get_relationship_state', description: '读取关系底色' },
@@ -2860,7 +3304,10 @@ app.post('/chat', async (req, res) => {
       relationship_patterns_30d: calculateRelationshipPatterns(30),
       repair_patterns_30d: calculateRelationshipRepairPatterns(30),
       emotional_forecast_24h: getEmotionalForecast(24),
-      care_suggestions: getCareSuggestions()
+      care_suggestions: getCareSuggestions(),
+      visual_history_30d: getVisualHistory(30),
+      relationship_behavior_analysis_30d: getRelationshipBehaviorAnalysis(30),
+      unresolved_action_plan: getUnresolvedEventActionPlan({})
     })
   } catch (err) {
     console.log('chat error', err)
@@ -2874,5 +3321,5 @@ app.post('/chat', async (req, res) => {
 const PORT = process.env.PORT || 3000
 
 app.listen(PORT, () => {
-  console.log('emotion mcp server running psychological-state-v4-forecast-care')
+  console.log('emotion mcp server running psychological-state-v5-visual-simulation')
 })
