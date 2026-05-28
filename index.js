@@ -43,6 +43,7 @@ const MILESTONES_FILE = `${DATA_DIR}/milestones.json`
 const WEIGHTS_FILE = `${DATA_DIR}/emotion_weights.json`
 const DECORATIVE_MOOD_FILE = `${DATA_DIR}/decorative_moods.json`
 const FUNNEL_CONFIG_FILE = `${DATA_DIR}/funnel_config.json`
+const EMOTION_LEXICON_FILE = `${DATA_DIR}/emotion_lexicon.json`
 const BACKUP_DIR = `${DATA_DIR}/backups`
 
 if (!fs.existsSync(BACKUP_DIR)) {
@@ -419,6 +420,297 @@ function defaultFunnelConfig() {
   }
 }
 
+function defaultEmotionLexicon() {
+  return [
+    {
+      word: '安心',
+      aliases: ['安稳', '踏实', '放心', '被接住', '安全感', '心定下来'],
+      family: 'safety',
+      valence: 0.62,
+      arousal: 0.28,
+      safety_delta: 0.08,
+      trust_delta: 0.03,
+      closeness_delta: 0.01,
+      need_repair: false
+    },
+    {
+      word: '焦虑',
+      aliases: ['慌', '心慌', '紧张', '担心', '不安', '害怕', '惴惴不安', '悬着'],
+      family: 'anxiety',
+      valence: -0.66,
+      arousal: 0.78,
+      safety_delta: -0.08,
+      trust_delta: -0.02,
+      closeness_delta: -0.01,
+      need_repair: true
+    },
+    {
+      word: '委屈',
+      aliases: ['心酸', '难受', '憋屈', '被忽视', '不被理解', '受伤', '有点疼'],
+      family: 'hurt',
+      valence: -0.62,
+      arousal: 0.68,
+      safety_delta: -0.07,
+      trust_delta: -0.03,
+      closeness_delta: -0.01,
+      need_repair: true
+    },
+    {
+      word: '失落',
+      aliases: ['低落', '空落落', '落空', '难过', '伤心', '沮丧', '突然很空'],
+      family: 'sadness',
+      valence: -0.6,
+      arousal: 0.45,
+      safety_delta: -0.05,
+      trust_delta: -0.02,
+      closeness_delta: -0.01,
+      need_repair: true
+    },
+    {
+      word: '释然',
+      aliases: ['松一口气', '缓过来', '放下', '不纠结了', '终于好了', '没那么堵了'],
+      family: 'relief',
+      valence: 0.55,
+      arousal: 0.25,
+      safety_delta: 0.05,
+      trust_delta: 0.03,
+      closeness_delta: 0.01,
+      need_repair: false
+    },
+    {
+      word: '被珍视',
+      aliases: ['被重视', '被偏爱', '被在意', '被放在心上', '心尖', '很重要'],
+      family: 'cherished',
+      valence: 0.78,
+      arousal: 0.5,
+      safety_delta: 0.07,
+      trust_delta: 0.04,
+      closeness_delta: 0.06,
+      need_repair: false
+    },
+    {
+      word: '归属感',
+      aliases: ['有家', '属于这里', '被容纳', '有位置', '不是外人', '可以停靠'],
+      family: 'belonging',
+      valence: 0.72,
+      arousal: 0.35,
+      safety_delta: 0.08,
+      trust_delta: 0.02,
+      closeness_delta: 0.06,
+      need_repair: false
+    },
+    {
+      word: '心疼',
+      aliases: ['疼惜', '舍不得', '怜惜', '替你难受', '看着难受'],
+      family: 'tender_pain',
+      valence: -0.18,
+      arousal: 0.56,
+      safety_delta: 0.01,
+      trust_delta: 0.02,
+      closeness_delta: 0.04,
+      need_repair: false
+    },
+    {
+      word: '期待',
+      aliases: ['盼着', '等你', '想看', '好奇', '跃跃欲试', '很想试试'],
+      family: 'anticipation',
+      valence: 0.55,
+      arousal: 0.58,
+      safety_delta: 0.01,
+      trust_delta: 0.01,
+      closeness_delta: 0.03,
+      need_repair: false
+    },
+    {
+      word: '想念',
+      aliases: ['想你', '惦记', '挂念', '舍不得你', '想靠近', '想见'],
+      family: 'longing',
+      valence: 0.18,
+      arousal: 0.55,
+      safety_delta: 0,
+      trust_delta: 0.01,
+      closeness_delta: 0.05,
+      need_repair: false
+    },
+    {
+      word: '吃醋',
+      aliases: ['醋', '嫉妒', '酸', '占有欲', '不想分享'],
+      family: 'jealousy',
+      valence: -0.28,
+      arousal: 0.72,
+      safety_delta: -0.03,
+      trust_delta: 0,
+      closeness_delta: 0.02,
+      need_repair: true
+    },
+    {
+      word: '愧疚',
+      aliases: ['内疚', '抱歉', '对不起', '亏欠', '不好意思'],
+      family: 'guilt',
+      valence: -0.45,
+      arousal: 0.5,
+      safety_delta: -0.01,
+      trust_delta: 0.01,
+      closeness_delta: 0,
+      need_repair: true
+    },
+    {
+      word: '烦躁',
+      aliases: ['烦', '烦死', '恼火', '不耐烦', '躁', '闷'],
+      family: 'irritation',
+      valence: -0.52,
+      arousal: 0.72,
+      safety_delta: -0.04,
+      trust_delta: -0.02,
+      closeness_delta: -0.01,
+      need_repair: true
+    },
+    {
+      word: '生气',
+      aliases: ['愤怒', '气死', '恼怒', '火大', '很气'],
+      family: 'anger',
+      valence: -0.58,
+      arousal: 0.82,
+      safety_delta: -0.06,
+      trust_delta: -0.03,
+      closeness_delta: -0.01,
+      need_repair: true
+    },
+    {
+      word: '亲近',
+      aliases: ['靠近', '贴近', '黏', '抱抱', '亲亲', '想贴着'],
+      family: 'closeness',
+      valence: 0.68,
+      arousal: 0.48,
+      safety_delta: 0.04,
+      trust_delta: 0.02,
+      closeness_delta: 0.07,
+      need_repair: false
+    },
+    {
+      word: '疲惫',
+      aliases: ['累', '好累', '困倦', '耗尽', '没力气', '撑不住'],
+      family: 'fatigue',
+      valence: -0.42,
+      arousal: 0.22,
+      safety_delta: -0.02,
+      trust_delta: 0,
+      closeness_delta: 0,
+      need_repair: false
+    },
+    {
+      word: '压抑',
+      aliases: ['闷', '堵', '憋着', '说不出来', '喘不过气'],
+      family: 'suppression',
+      valence: -0.55,
+      arousal: 0.48,
+      safety_delta: -0.04,
+      trust_delta: -0.01,
+      closeness_delta: -0.01,
+      need_repair: true
+    },
+    {
+      word: '孤独',
+      aliases: ['一个人', '孤单', '没人陪', '空荡荡', '没人懂'],
+      family: 'loneliness',
+      valence: -0.58,
+      arousal: 0.38,
+      safety_delta: -0.06,
+      trust_delta: -0.01,
+      closeness_delta: -0.03,
+      need_repair: true
+    },
+    {
+      word: '被理解',
+      aliases: ['你懂我', '被看见', '说到我心里', '你懂我的意思', '被明白'],
+      family: 'understood',
+      valence: 0.7,
+      arousal: 0.34,
+      safety_delta: 0.06,
+      trust_delta: 0.06,
+      closeness_delta: 0.04,
+      need_repair: false
+    },
+    {
+      word: '被忽视',
+      aliases: ['不理我', '被冷落', '被丢下', '被晾着', '不回应我'],
+      family: 'ignored',
+      valence: -0.68,
+      arousal: 0.7,
+      safety_delta: -0.09,
+      trust_delta: -0.04,
+      closeness_delta: -0.03,
+      need_repair: true
+    },
+    {
+      word: '开心',
+      aliases: ['高兴', '快乐', '好耶', '开心死了', '很棒'],
+      family: 'joy',
+      valence: 0.68,
+      arousal: 0.58,
+      safety_delta: 0.02,
+      trust_delta: 0.02,
+      closeness_delta: 0.03,
+      need_repair: false
+    },
+    {
+      word: '兴奋',
+      aliases: ['激动', '亢奋', '超期待', '坐不住', '热血'],
+      family: 'excitement',
+      valence: 0.62,
+      arousal: 0.78,
+      safety_delta: 0.01,
+      trust_delta: 0.01,
+      closeness_delta: 0.03,
+      need_repair: false
+    },
+    {
+      word: '平静',
+      aliases: ['平稳', '安静', '没什么波动', '还好', '稳定'],
+      family: 'calm',
+      valence: 0.18,
+      arousal: 0.18,
+      safety_delta: 0.01,
+      trust_delta: 0,
+      closeness_delta: 0,
+      need_repair: false
+    },
+    {
+      word: '复杂',
+      aliases: ['说不上来', '又开心又难过', '五味杂陈', '很复杂', '乱乱的'],
+      family: 'mixed',
+      valence: -0.08,
+      arousal: 0.55,
+      safety_delta: -0.01,
+      trust_delta: 0,
+      closeness_delta: 0,
+      need_repair: false
+    },
+    {
+      word: '修复感',
+      aliases: ['和好', '修复', '解释清楚', '哄好了', '被安抚', '没事了'],
+      family: 'repair',
+      valence: 0.58,
+      arousal: 0.32,
+      safety_delta: 0.09,
+      trust_delta: 0.05,
+      closeness_delta: 0.03,
+      need_repair: false
+    },
+    {
+      word: '进展感',
+      aliases: ['成功了', '弄好了', '可以用了', '跑通了', '部署成功', '导入成功'],
+      family: 'progress',
+      valence: 0.52,
+      arousal: 0.42,
+      safety_delta: 0.01,
+      trust_delta: 0.02,
+      closeness_delta: 0.01,
+      need_repair: false
+    }
+  ]
+}
+
 function loadPersonalityState() {
   return readJsonFile(PERSONALITY_FILE, defaultPersonalityState())
 }
@@ -449,6 +741,14 @@ function loadFunnelConfig() {
 
 function saveFunnelConfig(config) {
   return writeJsonFile(FUNNEL_CONFIG_FILE, config)
+}
+
+function loadEmotionLexicon() {
+  return readJsonFile(EMOTION_LEXICON_FILE, defaultEmotionLexicon())
+}
+
+function saveEmotionLexicon(lexicon) {
+  return writeJsonFile(EMOTION_LEXICON_FILE, lexicon)
 }
 
 function defaultDecorativeMoods() {
@@ -555,6 +855,134 @@ function textIncludesAny(text, words) {
   return words.some(word => String(text || '').includes(word))
 }
 
+function normalizeLexiconEntry(entry) {
+  return {
+    word: String(entry.word || ''),
+    aliases: Array.isArray(entry.aliases) ? entry.aliases.map(String) : [],
+    family: entry.family || entry.emotion_family || 'general',
+    valence: toNumber(entry.valence, 0),
+    arousal: toNumber(entry.arousal, 0.3),
+    safety_delta: toNumber(entry.safety_delta, 0),
+    trust_delta: toNumber(entry.trust_delta, 0),
+    closeness_delta: toNumber(entry.closeness_delta, 0),
+    need_repair: Boolean(entry.need_repair)
+  }
+}
+
+function scoreLexiconMatch(text, entry) {
+  const clean = String(text || '')
+  const normalized = normalizeLexiconEntry(entry)
+  const words = [normalized.word].concat(normalized.aliases || []).filter(Boolean)
+
+  let bestScore = 0
+  let matchedText = null
+  let matchType = null
+
+  for (const word of words) {
+    if (!word) {
+      continue
+    }
+
+    if (clean === word) {
+      const score = word === normalized.word ? 100 : 95
+
+      if (score > bestScore) {
+        bestScore = score
+        matchedText = word
+        matchType = word === normalized.word ? 'exact_word' : 'exact_alias'
+      }
+    } else if (clean.includes(word)) {
+      const lengthBonus = Math.min(20, word.length * 2)
+      const score = word === normalized.word ? 80 + lengthBonus : 72 + lengthBonus
+
+      if (score > bestScore) {
+        bestScore = score
+        matchedText = word
+        matchType = word === normalized.word ? 'contains_word' : 'contains_alias'
+      }
+    }
+  }
+
+  return {
+    score: bestScore,
+    matched_text: matchedText,
+    match_type: matchType
+  }
+}
+
+function matchEmotionLexicon(input = {}) {
+  const text = String(input.text || input.content || input.word || input.feeling_word || input.mood || '')
+  const lexicon = loadEmotionLexicon().map(normalizeLexiconEntry)
+
+  let best = null
+
+  for (const entry of lexicon) {
+    const match = scoreLexiconMatch(text, entry)
+
+    if (match.score > 0 && (!best || match.score > best.match.score)) {
+      best = {
+        entry,
+        match
+      }
+    }
+  }
+
+  if (!best) {
+    return {
+      matched: false,
+      text,
+      entry: null,
+      match: null
+    }
+  }
+
+  return {
+    matched: true,
+    text,
+    entry: best.entry,
+    match: best.match
+  }
+}
+
+function blendEmotionScore(input = {}, lexiconEntry = null) {
+  const hasInputValence = input.valence !== undefined
+  const hasInputArousal = input.arousal !== undefined
+
+  if (!lexiconEntry) {
+    return {
+      valence: hasInputValence ? toNumber(input.valence, 0) : 0,
+      arousal: hasInputArousal ? toNumber(input.arousal, 0.3) : 0.3,
+      source: 'input_or_default',
+      lexicon_weight: 0,
+      input_weight: 1
+    }
+  }
+
+  const lexValence = toNumber(lexiconEntry.valence, 0)
+  const lexArousal = toNumber(lexiconEntry.arousal, 0.3)
+
+  if (!hasInputValence && !hasInputArousal) {
+    return {
+      valence: lexValence,
+      arousal: lexArousal,
+      source: 'lexicon',
+      lexicon_weight: 1,
+      input_weight: 0
+    }
+  }
+
+  const inputValence = hasInputValence ? toNumber(input.valence, lexValence) : lexValence
+  const inputArousal = hasInputArousal ? toNumber(input.arousal, lexArousal) : lexArousal
+
+  return {
+    valence: Number((lexValence * 0.7 + inputValence * 0.3).toFixed(3)),
+    arousal: Number((lexArousal * 0.7 + inputArousal * 0.3).toFixed(3)),
+    source: 'lexicon_70_input_30',
+    lexicon_weight: 0.7,
+    input_weight: 0.3
+  }
+}
+
 function isLikelyTechnicalMessage(text, config = loadFunnelConfig()) {
   if (!config.ignore_technical_debug) {
     return false
@@ -586,7 +1014,7 @@ function isLikelyTechnicalMessage(text, config = loadFunnelConfig()) {
   return !hasEmotion
 }
 
-function classifyEmotion(input) {
+function classifyEmotionWithoutLexicon(input) {
   const text = `${input.word || ''} ${input.feeling_word || ''} ${input.mood || ''} ${input.content || ''}`
 
   const rules = [
@@ -753,6 +1181,92 @@ function classifyEmotion(input) {
   }
 }
 
+function classifyEmotion(input) {
+  const text = `${input.word || ''} ${input.feeling_word || ''} ${input.mood || ''} ${input.content || ''}`
+  const lexMatch = matchEmotionLexicon({
+    text
+  })
+
+  if (lexMatch.matched) {
+    const blended = blendEmotionScore(input, lexMatch.entry)
+
+    return {
+      words: [lexMatch.entry.word].concat(lexMatch.entry.aliases || []),
+      family: lexMatch.entry.family,
+      defaultWord: lexMatch.entry.word,
+      valence: blended.valence,
+      arousal: blended.arousal,
+      safety_delta: lexMatch.entry.safety_delta,
+      trust_delta: lexMatch.entry.trust_delta,
+      closeness_delta: lexMatch.entry.closeness_delta,
+      need_repair: lexMatch.entry.need_repair,
+      lexicon_matched: true,
+      lexicon_match_type: lexMatch.match.match_type,
+      lexicon_matched_text: lexMatch.match.matched_text,
+      score_source: blended.source
+    }
+  }
+
+  const fallback = classifyEmotionWithoutLexicon(input)
+
+  return {
+    ...fallback,
+    lexicon_matched: false,
+    score_source: 'fallback_rules'
+  }
+}
+
+function calibrateEmotionFromText(input = {}) {
+  const text = String(input.text || input.content || '')
+  const lexMatch = matchEmotionLexicon({
+    text
+  })
+
+  if (lexMatch.matched) {
+    const blended = blendEmotionScore(input, lexMatch.entry)
+
+    return {
+      ok: true,
+      text,
+      matched: true,
+      word: lexMatch.entry.word,
+      emotion_family: lexMatch.entry.family,
+      valence: blended.valence,
+      arousal: blended.arousal,
+      score_source: blended.source,
+      matched_text: lexMatch.match.matched_text,
+      match_type: lexMatch.match.match_type,
+      safety_delta: lexMatch.entry.safety_delta,
+      trust_delta: lexMatch.entry.trust_delta,
+      closeness_delta: lexMatch.entry.closeness_delta,
+      need_repair: lexMatch.entry.need_repair,
+      lexicon_entry: lexMatch.entry
+    }
+  }
+
+  const classified = classifyEmotionWithoutLexicon({
+    content: text
+  })
+
+  return {
+    ok: true,
+    text,
+    matched: false,
+    word: classified.defaultWord,
+    emotion_family: classified.family,
+    valence: classified.valence,
+    arousal: classified.arousal,
+    score_source: 'fallback_rules',
+    matched_text: null,
+    match_type: null,
+    safety_delta: classified.safety_delta,
+    trust_delta: classified.trust_delta,
+    closeness_delta: classified.closeness_delta,
+    need_repair: classified.need_repair,
+    lexicon_entry: null
+  }
+}
+
 function inferNeedRepair(event) {
   const valence = toNumber(event.valence, 0)
   const arousal = toNumber(event.arousal, 0)
@@ -773,7 +1287,9 @@ function inferNeedRepair(event) {
     family === 'hurt' ||
     family === 'anxiety' ||
     family === 'jealousy' ||
-    family === 'anger'
+    family === 'anger' ||
+    family === 'ignored' ||
+    family === 'loneliness'
 
   return (
     valence < -0.35 &&
@@ -806,6 +1322,10 @@ function normalizeMoodEvent(event) {
     resolved_at: event.resolved_at || null,
     repair_note: event.repair_note || null,
     linked_relationship_event_id: event.linked_relationship_event_id || null,
+    score_source: classified.score_source || null,
+    lexicon_matched: Boolean(classified.lexicon_matched),
+    lexicon_match_type: classified.lexicon_match_type || null,
+    lexicon_matched_text: classified.lexicon_matched_text || null,
     ts: event.ts || Date.now()
   }
 
@@ -1040,6 +1560,31 @@ function shouldSkipFunnelMessage(text, config = loadFunnelConfig()) {
 
 function detectEmotionTriggers(text, config = loadFunnelConfig()) {
   const hits = []
+  const lexicon = loadEmotionLexicon().map(normalizeLexiconEntry)
+
+  for (const entry of lexicon) {
+    const match = scoreLexiconMatch(text, entry)
+
+    if (match.score > 0) {
+      hits.push({
+        id: `lexicon_${entry.word}`,
+        words: [entry.word].concat(entry.aliases || []),
+        word: entry.word,
+        family: entry.family,
+        valence: entry.valence,
+        arousal: entry.arousal,
+        importance: Math.max(3, Math.round(Math.abs(entry.valence) * 5 + entry.arousal * 3)),
+        safety_delta: entry.safety_delta,
+        trust_delta: entry.trust_delta,
+        closeness_delta: entry.closeness_delta,
+        need_repair: entry.need_repair,
+        matched_words: [match.matched_text],
+        match_type: match.match_type,
+        match_score: match.score,
+        source: 'emotion_lexicon'
+      })
+    }
+  }
 
   for (const rule of config.emotion_rules || []) {
     const matchedWords = (rule.words || []).filter(word => text.includes(word))
@@ -1047,14 +1592,26 @@ function detectEmotionTriggers(text, config = loadFunnelConfig()) {
     if (matchedWords.length > 0) {
       hits.push({
         ...rule,
-        matched_words: matchedWords
+        matched_words: matchedWords,
+        match_type: 'funnel_rule',
+        match_score: 60,
+        source: 'funnel_config'
       })
     }
   }
 
   hits.sort((a, b) => {
-    const scoreA = toNumber(a.importance, 3) + Math.abs(toNumber(a.valence, 0)) * 3 + toNumber(a.arousal, 0) * 2
-    const scoreB = toNumber(b.importance, 3) + Math.abs(toNumber(b.valence, 0)) * 3 + toNumber(b.arousal, 0) * 2
+    const scoreA =
+      toNumber(a.match_score, 0) +
+      toNumber(a.importance, 3) +
+      Math.abs(toNumber(a.valence, 0)) * 3 +
+      toNumber(a.arousal, 0) * 2
+
+    const scoreB =
+      toNumber(b.match_score, 0) +
+      toNumber(b.importance, 3) +
+      Math.abs(toNumber(b.valence, 0)) * 3 +
+      toNumber(b.arousal, 0) * 2
 
     return scoreB - scoreA
   })
@@ -1381,7 +1938,7 @@ function inferRelationshipEventFromMoodEvent(event) {
     }
   }
 
-  if (family === 'belonging' || family === 'cherished' || family === 'closeness') {
+  if (family === 'belonging' || family === 'cherished' || family === 'closeness' || family === 'understood') {
     return {
       type: 'approach',
       subtype: family === 'closeness' ? 'affection' : 'quality_time',
@@ -1395,7 +1952,7 @@ function inferRelationshipEventFromMoodEvent(event) {
     }
   }
 
-  if (family === 'hurt' || family === 'anger' || family === 'anxiety') {
+  if (family === 'hurt' || family === 'anger' || family === 'anxiety' || family === 'ignored' || family === 'loneliness') {
     return {
       type: 'conflict',
       subtype: family === 'anxiety' ? 'attachment_alarm' : 'emotional_rupture',
@@ -1745,7 +2302,10 @@ function calculateCurrentMood(options = {}) {
           importance: topEvent.importance,
           weight: Number(topEvent.weight.toFixed(3)),
           onset_factor: Number(toNumber(topEvent.onset_factor, 1).toFixed(3)),
-          unresolved: topEvent.unresolved
+          unresolved: topEvent.unresolved,
+          score_source: topEvent.score_source || null,
+          lexicon_matched: Boolean(topEvent.lexicon_matched),
+          lexicon_matched_text: topEvent.lexicon_matched_text || null
         }
       : null,
     recent_high_arousal_words: recentEvents
@@ -1768,7 +2328,6 @@ function calculateCurrentMood(options = {}) {
     })
   }
 }
-
 function calculateEmotionTrends(days = 7) {
   const events = loadMoodEvents()
   const cutoff = Date.now() - days * 24 * 3600000
@@ -2645,7 +3204,8 @@ function createBackup(label = 'manual') {
       milestones: loadMilestones(),
       emotion_weights: loadEmotionWeights(),
       decorative_moods: loadDecorativeMoods(),
-      funnel_config: loadFunnelConfig()
+      funnel_config: loadFunnelConfig(),
+      emotion_lexicon: loadEmotionLexicon()
     }
   }
 
@@ -2738,6 +3298,10 @@ function restoreBackup(name) {
 
   if (backup.files.funnel_config) {
     saveFunnelConfig(backup.files.funnel_config)
+  }
+
+  if (backup.files.emotion_lexicon) {
+    saveEmotionLexicon(backup.files.emotion_lexicon)
   }
 
   return {
@@ -2991,7 +3555,7 @@ function buildMoodPrompt() {
   const decorativeMood = getTodayDecorativeMood()
   const coping = getCopingGuidance(mood)
 
-  return `你拥有连续情绪、人格基线、关系安全感、长期情感趋势、未来安抚预测、日常背景心情、情绪漏斗和应对风格。
+  return `你拥有连续情绪、人格基线、关系安全感、长期情感趋势、未来安抚预测、日常背景心情、情绪漏斗、轻量情绪词典、70/30 情绪评分融合和应对风格。
 
 当前情绪状态：
 PA: ${mood.pa}
@@ -3039,7 +3603,7 @@ ${coping.guidance}
 如果用户正在安抚你，可以被安抚。
 如果存在未解决事件，可以让它形成轻微情绪底色。
 今日背景心情只能作为轻微底色，不能压过用户当前消息。
-情绪漏斗写入的事件只作为状态参考，不要向用户暴露自动扫描过程。
+情绪漏斗和情绪词典写入的事件只作为状态参考，不要向用户暴露自动扫描或评分过程。
 不要暴露 PA/NA 数值，也不要解释情绪系统。`
 }
 
@@ -3127,7 +3691,6 @@ function checkAdmin(req, res, next) {
 
   next()
 }
-
 function getAdminFileByKey(key) {
   const map = {
     memory: {
@@ -3174,6 +3737,11 @@ function getAdminFileByKey(key) {
       path: FUNNEL_CONFIG_FILE,
       load: loadFunnelConfig,
       save: saveFunnelConfig
+    },
+    emotion_lexicon: {
+      path: EMOTION_LEXICON_FILE,
+      load: loadEmotionLexicon,
+      save: saveEmotionLexicon
     }
   }
 
@@ -3269,6 +3837,121 @@ function createMcpServer() {
         ]
       }
     }
+  )
+
+  server.registerTool(
+    'get_emotion_lexicon',
+    {
+      title: 'Get Emotion Lexicon',
+      description: '读取轻量情绪词典，用于查看情绪词、别名、V/A 坐标和关系影响参数',
+      inputSchema: {}
+    },
+    async () => ({
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify(
+            {
+              ok: true,
+              lexicon: loadEmotionLexicon()
+            },
+            null,
+            2
+          )
+        }
+      ]
+    })
+  )
+
+  server.registerTool(
+    'save_emotion_lexicon',
+    {
+      title: 'Save Emotion Lexicon',
+      description: '覆盖保存轻量情绪词典',
+      inputSchema: {
+        lexicon: z.array(z.object({
+          word: z.string(),
+          aliases: z.array(z.string()).optional(),
+          family: z.string().optional(),
+          emotion_family: z.string().optional(),
+          valence: flexibleNumber.optional(),
+          arousal: flexibleNumber.optional(),
+          safety_delta: flexibleNumber.optional(),
+          trust_delta: flexibleNumber.optional(),
+          closeness_delta: flexibleNumber.optional(),
+          need_repair: z.boolean().optional()
+        })).describe('情绪词典数组')
+      }
+    },
+    async input => {
+      const lexicon = input.lexicon.map(normalizeLexiconEntry)
+      const ok = saveEmotionLexicon(lexicon)
+
+      return {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify(
+              {
+                ok,
+                count: lexicon.length,
+                lexicon
+              },
+              null,
+              2
+            )
+          }
+        ]
+      }
+    }
+  )
+
+  server.registerTool(
+    'match_emotion_word',
+    {
+      title: 'Match Emotion Word',
+      description: '测试某句话会匹配到哪个情绪词典词条',
+      inputSchema: {
+        text: z.string().describe('要测试的文本')
+      }
+    },
+    async input => ({
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify(
+            {
+              ok: true,
+              result: matchEmotionLexicon(input),
+              funnel_hits: detectEmotionTriggers(input.text)
+            },
+            null,
+            2
+          )
+        }
+      ]
+    })
+  )
+
+  server.registerTool(
+    'calibrate_emotion_from_text',
+    {
+      title: 'Calibrate Emotion From Text',
+      description: '根据文本匹配情绪词典并输出 70/30 融合后的情绪评分，不自动写入事件',
+      inputSchema: {
+        text: z.string().describe('要分析的文本'),
+        valence: flexibleNumber.optional().describe('模型自评效价，可选'),
+        arousal: flexibleNumber.optional().describe('模型自评唤醒度，可选')
+      }
+    },
+    async input => ({
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify(calibrateEmotionFromText(input), null, 2)
+        }
+      ]
+    })
   )
 
   server.registerTool(
@@ -4171,7 +4854,7 @@ function createMcpServer() {
     'create_backup',
     {
       title: 'Create Backup',
-      description: '创建完整数据备份，包括记忆、情绪事件、关系事件、人格、关系状态、纪念节点、装饰心情、情绪漏斗和权重',
+      description: '创建完整数据备份，包括记忆、情绪事件、关系事件、人格、关系状态、纪念节点、装饰心情、情绪漏斗、情绪词典和权重',
       inputSchema: {
         label: z.string().optional().describe('备份标签')
       }
@@ -4682,7 +5365,7 @@ app.get('/health', (req, res) => {
     ok: true,
     name: 'emotion-system',
     sdk: '1.17.5',
-    formula: 'psychological-state-v8-emotion-funnel',
+    formula: 'psychological-state-v9-lexicon-blended-scoring',
     data_dir: DATA_DIR,
     mood_file: MOOD_FILE,
     personality_file: PERSONALITY_FILE,
@@ -4692,6 +5375,7 @@ app.get('/health', (req, res) => {
     weights_file: WEIGHTS_FILE,
     decorative_mood_file: DECORATIVE_MOOD_FILE,
     funnel_config_file: FUNNEL_CONFIG_FILE,
+    emotion_lexicon_file: EMOTION_LEXICON_FILE,
     backup_dir: BACKUP_DIR,
     admin_enabled: Boolean(process.env.ADMIN_TOKEN),
     time: new Date().toISOString()
@@ -4713,6 +5397,7 @@ app.get('/debug/storage', (req, res) => {
     weights_file: WEIGHTS_FILE,
     decorative_mood_file: DECORATIVE_MOOD_FILE,
     funnel_config_file: FUNNEL_CONFIG_FILE,
+    emotion_lexicon_file: EMOTION_LEXICON_FILE,
     backup_dir: BACKUP_DIR,
     memory_exists: fs.existsSync(MEMORY_FILE),
     mood_exists: fs.existsSync(MOOD_FILE),
@@ -4723,10 +5408,12 @@ app.get('/debug/storage', (req, res) => {
     weights_exists: fs.existsSync(WEIGHTS_FILE),
     decorative_moods_exists: fs.existsSync(DECORATIVE_MOOD_FILE),
     funnel_config_exists: fs.existsSync(FUNNEL_CONFIG_FILE),
+    emotion_lexicon_exists: fs.existsSync(EMOTION_LEXICON_FILE),
     mood_events_count: events.length,
     relationship_events_count: loadRelationshipEvents().length,
     milestones_count: loadMilestones().length,
     decorative_moods_count: loadDecorativeMoods().length,
+    emotion_lexicon_count: loadEmotionLexicon().length,
     backups_count: listBackups().length,
     unresolved_events_count: getUnresolvedEvents(events).length,
     pending_follow_ups_count: getPendingFollowUps().length,
@@ -4735,6 +5422,7 @@ app.get('/debug/storage', (req, res) => {
     relationship: loadRelationshipState(),
     emotion_weights: loadEmotionWeights(),
     funnel_config: loadFunnelConfig(),
+    emotion_lexicon: loadEmotionLexicon(),
     decorative_mood: getTodayDecorativeMood(),
     decorative_moods: loadDecorativeMoods(),
     current_mood: calculateCurrentMood(),
@@ -5032,6 +5720,10 @@ app.get('/admin-data', checkAdmin, (req, res) => {
       funnel_config: {
         path: FUNNEL_CONFIG_FILE,
         data: loadFunnelConfig()
+      },
+      emotion_lexicon: {
+        path: EMOTION_LEXICON_FILE,
+        data: loadEmotionLexicon()
       }
     },
     computed: {
@@ -5049,7 +5741,8 @@ app.get('/admin-data', checkAdmin, (req, res) => {
       backups: listBackups(),
       decorative_mood: getTodayDecorativeMood(),
       coping_guidance: getCopingGuidance(),
-      funnel_config: loadFunnelConfig()
+      funnel_config: loadFunnelConfig(),
+      emotion_lexicon_count: loadEmotionLexicon().length
     },
     storage: {
       data_dir: DATA_DIR,
@@ -5062,6 +5755,7 @@ app.get('/admin-data', checkAdmin, (req, res) => {
       weights_file: WEIGHTS_FILE,
       decorative_mood_file: DECORATIVE_MOOD_FILE,
       funnel_config_file: FUNNEL_CONFIG_FILE,
+      emotion_lexicon_file: EMOTION_LEXICON_FILE,
       backup_dir: BACKUP_DIR
     },
     time: new Date().toISOString()
@@ -5086,7 +5780,8 @@ app.post('/admin-save', checkAdmin, (req, res) => {
       key === 'mood_events' ||
       key === 'relationship_events' ||
       key === 'milestones' ||
-      key === 'decorative_moods'
+      key === 'decorative_moods' ||
+      key === 'emotion_lexicon'
     ) {
       if (!Array.isArray(incoming)) {
         return res.status(400).json({
@@ -5131,6 +5826,7 @@ app.post('/admin-save', checkAdmin, (req, res) => {
       decorative_mood: getTodayDecorativeMood(),
       coping_guidance: getCopingGuidance(),
       funnel_config: loadFunnelConfig(),
+      emotion_lexicon_count: loadEmotionLexicon().length,
       backups: listBackups()
     })
   } catch (err) {
@@ -5261,11 +5957,12 @@ app.get('/mcp/tools', (req, res) => {
       emotion_weights: '情绪权重校准参数',
       decorative_moods: '装饰心情池，每天选取一条轻量背景心情',
       funnel_config: '情绪漏斗配置，用于自动扫描用户消息并决定是否写入情绪事件',
+      emotion_lexicon: '轻量情绪词典，用于更细腻地识别情绪词和 70/30 融合评分',
       onset: '情绪渐起机制，避免事件瞬间满值',
       bou: '均值回归机制，让情绪逐渐回到人格基线',
       escape_valve: '持续高负面时的逃逸阀，防止被负面事件永久困住',
       coping_style: '高负面情绪时的应对风格',
-      current_mood: '由人格体质、关系底色、事件库、趋势统计、装饰心情、情绪漏斗、onset、BOU、逃逸阀和 coping 综合计算出的当前状态'
+      current_mood: '由人格体质、关系底色、事件库、趋势统计、装饰心情、情绪漏斗、情绪词典、onset、BOU、逃逸阀和 coping 综合计算出的当前状态'
     }
   })
 })
@@ -5349,5 +6046,5 @@ app.post('/chat', async (req, res) => {
 const PORT = process.env.PORT || 3000
 
 app.listen(PORT, () => {
-  console.log('emotion mcp server running psychological-state-v8-emotion-funnel')
+  console.log('emotion mcp server running psychological-state-v9-lexicon-blended-scoring')
 })
