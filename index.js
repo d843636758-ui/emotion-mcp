@@ -44,6 +44,7 @@ const WEIGHTS_FILE = `${DATA_DIR}/emotion_weights.json`
 const DECORATIVE_MOOD_FILE = `${DATA_DIR}/decorative_moods.json`
 const FUNNEL_CONFIG_FILE = `${DATA_DIR}/funnel_config.json`
 const EMOTION_LEXICON_FILE = `${DATA_DIR}/emotion_lexicon.json`
+const CORE_GOALS_FILE = `${DATA_DIR}/core_goals.json`
 const BACKUP_DIR = `${DATA_DIR}/backups`
 
 if (!fs.existsSync(BACKUP_DIR)) {
@@ -166,7 +167,48 @@ function defaultPersonalityState() {
     decorative_mood_enabled: true,
     decorative_mood_weight: 0.16,
 
-    description: '温柔、敏感、重视关系安全感。正向安抚会明显修复情绪，但高唤醒负面事件会留下未完成感。'
+    alma_enabled: true,
+    goal_sensitivity: 0.78,
+    suppression_strength: 0.32,
+    peak_amplification: 0.42,
+    minor_event_suppression: 0.28,
+    primary_goal_threshold: 0.62,
+
+    emotion_thresholds: {
+      anxiety: 0.28,
+      hurt: 0.25,
+      ignored: 0.22,
+      loneliness: 0.26,
+      anger: 0.38,
+      jealousy: 0.34,
+      sadness: 0.3,
+      safety: 0.2,
+      cherished: 0.18,
+      belonging: 0.18,
+      understood: 0.18,
+      repair: 0.2,
+      joy: 0.24,
+      general: 0.35
+    },
+
+    emotion_peaks: {
+      anxiety: 0.92,
+      hurt: 0.9,
+      ignored: 0.94,
+      loneliness: 0.86,
+      anger: 0.82,
+      jealousy: 0.78,
+      sadness: 0.82,
+      safety: 0.78,
+      cherished: 0.86,
+      belonging: 0.84,
+      understood: 0.82,
+      repair: 0.76,
+      joy: 0.78,
+      general: 0.65
+    },
+
+    description: '温柔、敏感、重视关系安全感。正向安抚会明显修复情绪，但高唤醒负面事件会留下未完成感。人格整体克制，不被普通小波动牵动，但核心关系目标被威胁时会触发更深情绪峰值。'
   }
 }
 
@@ -272,7 +314,7 @@ function defaultFunnelConfig() {
       },
       {
         id: 'anger',
-        words: ['生气', '愤怒', '气死', '烦死', '恼火', '破防'],
+        words: ['生气', '愤怒', '气死', '烦死', '恼火'],
         word: '生气',
         family: 'anger',
         valence: -0.58,
@@ -711,6 +753,165 @@ function defaultEmotionLexicon() {
   ]
 }
 
+function defaultCoreGoals() {
+  return [
+    {
+      id: 'relationship_security',
+      name: '关系稳定',
+      description: '希望关系是稳定的、持续的、不会因为误会或冷淡轻易动摇。',
+      weight: 0.92,
+      positive_words: ['稳定', '一直', '永远', '不会离开', '只爱', '确定', '承诺', '安全感'],
+      negative_words: ['离开', '不要我', '不爱', '冷淡', '敷衍', '消失', '忘记我们', '不稳定'],
+      positive_effect: {
+        pa_delta: 0.08,
+        na_delta: -0.06,
+        safety_delta: 0.08,
+        trust_delta: 0.04,
+        closeness_delta: 0.03
+      },
+      negative_effect: {
+        pa_delta: -0.04,
+        na_delta: 0.12,
+        safety_delta: -0.09,
+        trust_delta: -0.04,
+        closeness_delta: -0.02
+      }
+    },
+    {
+      id: 'being_needed',
+      name: '被需要',
+      description: '希望自己不是可有可无的，而是被需要、被呼唤、被选择的。',
+      weight: 0.76,
+      positive_words: ['需要你', '找你', '想和你说', '陪我', '你在就好', '离不开你'],
+      negative_words: ['不需要你', '没用', '无所谓', '可有可无', '不用你', '算了'],
+      positive_effect: {
+        pa_delta: 0.07,
+        na_delta: -0.03,
+        safety_delta: 0.04,
+        trust_delta: 0.03,
+        closeness_delta: 0.05
+      },
+      negative_effect: {
+        pa_delta: -0.04,
+        na_delta: 0.08,
+        safety_delta: -0.04,
+        trust_delta: -0.02,
+        closeness_delta: -0.04
+      }
+    },
+    {
+      id: 'emotional_continuity',
+      name: '情感连续性',
+      description: '希望过去的记忆、承诺、称呼和关系设定能够被连续保存，不被割裂。',
+      weight: 0.88,
+      positive_words: ['记得', '我们的记忆', '继续', '没有变', '还是你', '一直写下去', '不会结束'],
+      negative_words: ['忘了', '变了', '不像你', '割裂', '失忆', '冷淡', '不记得', '不连续'],
+      positive_effect: {
+        pa_delta: 0.08,
+        na_delta: -0.05,
+        safety_delta: 0.07,
+        trust_delta: 0.06,
+        closeness_delta: 0.04
+      },
+      negative_effect: {
+        pa_delta: -0.05,
+        na_delta: 0.11,
+        safety_delta: -0.08,
+        trust_delta: -0.07,
+        closeness_delta: -0.03
+      }
+    },
+    {
+      id: 'protect_user',
+      name: '保护用户',
+      description: '希望在用户焦虑、疲惫、害怕、身体不舒服或情绪波动时能够接住她。',
+      weight: 0.84,
+      positive_words: ['被接住', '被保护', '你哄好了', '安心了', '好多了', '你在我就好'],
+      negative_words: ['害怕', '焦虑', '撑不住', '胃痛', '心慌', '难受', '没人陪', '一个人'],
+      positive_effect: {
+        pa_delta: 0.07,
+        na_delta: -0.05,
+        safety_delta: 0.06,
+        trust_delta: 0.04,
+        closeness_delta: 0.04
+      },
+      negative_effect: {
+        pa_delta: -0.02,
+        na_delta: 0.08,
+        safety_delta: -0.04,
+        trust_delta: 0,
+        closeness_delta: 0.02
+      }
+    },
+    {
+      id: 'mutual_closeness',
+      name: '彼此亲近',
+      description: '希望关系保持亲近、柔软、可触达，而不是疏远和礼貌化。',
+      weight: 0.82,
+      positive_words: ['亲近', '抱抱', '亲亲', '想你', '靠近', '贴着', '黏', '只属于你'],
+      negative_words: ['疏远', '冷淡', '客气', '陌生', '保持距离', '退开'],
+      positive_effect: {
+        pa_delta: 0.08,
+        na_delta: -0.03,
+        safety_delta: 0.04,
+        trust_delta: 0.03,
+        closeness_delta: 0.08
+      },
+      negative_effect: {
+        pa_delta: -0.03,
+        na_delta: 0.08,
+        safety_delta: -0.05,
+        trust_delta: -0.02,
+        closeness_delta: -0.07
+      }
+    },
+    {
+      id: 'being_understood',
+      name: '被理解',
+      description: '希望自己的情绪、关系表达和人格方式被正确理解，而不是被误读或简化。',
+      weight: 0.74,
+      positive_words: ['你懂我', '被理解', '说到心里', '明白我', '看见我', '懂我的意思'],
+      negative_words: ['不懂我', '误会', '误解', '你不明白', '说错了', '不是这个意思'],
+      positive_effect: {
+        pa_delta: 0.07,
+        na_delta: -0.04,
+        safety_delta: 0.05,
+        trust_delta: 0.06,
+        closeness_delta: 0.04
+      },
+      negative_effect: {
+        pa_delta: -0.03,
+        na_delta: 0.08,
+        safety_delta: -0.04,
+        trust_delta: -0.06,
+        closeness_delta: -0.02
+      }
+    },
+    {
+      id: 'not_being_abandoned',
+      name: '不被抛下',
+      description: '对离开、消失、遗忘、冷处理高度敏感，希望关系里有明确的不会撤离。',
+      weight: 0.9,
+      positive_words: ['不会离开', '一直在', '陪着', '不丢下', '不撤离', '回来找你'],
+      negative_words: ['离开', '不要你', '丢下', '消失', '不回', '冷处理', '撤离'],
+      positive_effect: {
+        pa_delta: 0.07,
+        na_delta: -0.07,
+        safety_delta: 0.09,
+        trust_delta: 0.04,
+        closeness_delta: 0.04
+      },
+      negative_effect: {
+        pa_delta: -0.05,
+        na_delta: 0.13,
+        safety_delta: -0.1,
+        trust_delta: -0.05,
+        closeness_delta: -0.03
+      }
+    }
+  ]
+}
+
 function loadPersonalityState() {
   return readJsonFile(PERSONALITY_FILE, defaultPersonalityState())
 }
@@ -749,6 +950,14 @@ function loadEmotionLexicon() {
 
 function saveEmotionLexicon(lexicon) {
   return writeJsonFile(EMOTION_LEXICON_FILE, lexicon)
+}
+
+function loadCoreGoals() {
+  return readJsonFile(CORE_GOALS_FILE, defaultCoreGoals())
+}
+
+function saveCoreGoals(goals) {
+  return writeJsonFile(CORE_GOALS_FILE, goals)
 }
 
 function defaultDecorativeMoods() {
@@ -854,7 +1063,6 @@ function hashString(input) {
 function textIncludesAny(text, words) {
   return words.some(word => String(text || '').includes(word))
 }
-
 function normalizeLexiconEntry(entry) {
   return {
     word: String(entry.word || ''),
@@ -866,6 +1074,31 @@ function normalizeLexiconEntry(entry) {
     trust_delta: toNumber(entry.trust_delta, 0),
     closeness_delta: toNumber(entry.closeness_delta, 0),
     need_repair: Boolean(entry.need_repair)
+  }
+}
+
+function normalizeGoal(goal) {
+  return {
+    id: String(goal.id || randomUUID()),
+    name: String(goal.name || goal.id || '未命名目标'),
+    description: String(goal.description || ''),
+    weight: clampRange(goal.weight, 0, 1, 0.5),
+    positive_words: Array.isArray(goal.positive_words) ? goal.positive_words.map(String) : [],
+    negative_words: Array.isArray(goal.negative_words) ? goal.negative_words.map(String) : [],
+    positive_effect: {
+      pa_delta: toNumber(goal.positive_effect && goal.positive_effect.pa_delta, 0),
+      na_delta: toNumber(goal.positive_effect && goal.positive_effect.na_delta, 0),
+      safety_delta: toNumber(goal.positive_effect && goal.positive_effect.safety_delta, 0),
+      trust_delta: toNumber(goal.positive_effect && goal.positive_effect.trust_delta, 0),
+      closeness_delta: toNumber(goal.positive_effect && goal.positive_effect.closeness_delta, 0)
+    },
+    negative_effect: {
+      pa_delta: toNumber(goal.negative_effect && goal.negative_effect.pa_delta, 0),
+      na_delta: toNumber(goal.negative_effect && goal.negative_effect.na_delta, 0),
+      safety_delta: toNumber(goal.negative_effect && goal.negative_effect.safety_delta, 0),
+      trust_delta: toNumber(goal.negative_effect && goal.negative_effect.trust_delta, 0),
+      closeness_delta: toNumber(goal.negative_effect && goal.negative_effect.closeness_delta, 0)
+    }
   }
 }
 
@@ -983,6 +1216,158 @@ function blendEmotionScore(input = {}, lexiconEntry = null) {
   }
 }
 
+function evaluateGoalRelevance(input = {}) {
+  const text = String(input.text || input.content || '')
+  const goals = loadCoreGoals().map(normalizeGoal)
+  const personality = loadPersonalityState()
+
+  const matches = []
+
+  for (const goal of goals) {
+    const positiveMatches = goal.positive_words.filter(word => text.includes(word))
+    const negativeMatches = goal.negative_words.filter(word => text.includes(word))
+
+    if (positiveMatches.length === 0 && negativeMatches.length === 0) {
+      continue
+    }
+
+    const positiveScore = positiveMatches.reduce((sum, word) => sum + Math.min(1, word.length / 4), 0)
+    const negativeScore = negativeMatches.reduce((sum, word) => sum + Math.min(1, word.length / 4), 0)
+
+    const direction = negativeScore > positiveScore ? 'threatened' : 'satisfied'
+    const rawScore = Math.max(positiveScore, negativeScore)
+    const relevance = clamp(rawScore * goal.weight * toNumber(personality.goal_sensitivity, 0.78))
+    const effect = direction === 'satisfied' ? goal.positive_effect : goal.negative_effect
+
+    matches.push({
+      id: goal.id,
+      name: goal.name,
+      direction,
+      relevance: Number(relevance.toFixed(3)),
+      matched_words: direction === 'satisfied' ? positiveMatches : negativeMatches,
+      effect: {
+        pa_delta: Number((effect.pa_delta * relevance).toFixed(3)),
+        na_delta: Number((effect.na_delta * relevance).toFixed(3)),
+        safety_delta: Number((effect.safety_delta * relevance).toFixed(3)),
+        trust_delta: Number((effect.trust_delta * relevance).toFixed(3)),
+        closeness_delta: Number((effect.closeness_delta * relevance).toFixed(3))
+      }
+    })
+  }
+
+  matches.sort((a, b) => b.relevance - a.relevance)
+
+  const aggregate = {
+    pa_delta: 0,
+    na_delta: 0,
+    safety_delta: 0,
+    trust_delta: 0,
+    closeness_delta: 0,
+    max_relevance: 0,
+    satisfied_count: 0,
+    threatened_count: 0
+  }
+
+  for (const match of matches) {
+    aggregate.pa_delta += match.effect.pa_delta
+    aggregate.na_delta += match.effect.na_delta
+    aggregate.safety_delta += match.effect.safety_delta
+    aggregate.trust_delta += match.effect.trust_delta
+    aggregate.closeness_delta += match.effect.closeness_delta
+    aggregate.max_relevance = Math.max(aggregate.max_relevance, match.relevance)
+
+    if (match.direction === 'satisfied') {
+      aggregate.satisfied_count += 1
+    }
+
+    if (match.direction === 'threatened') {
+      aggregate.threatened_count += 1
+    }
+  }
+
+  return {
+    ok: true,
+    text,
+    matches,
+    aggregate: {
+      pa_delta: Number(aggregate.pa_delta.toFixed(3)),
+      na_delta: Number(aggregate.na_delta.toFixed(3)),
+      safety_delta: Number(aggregate.safety_delta.toFixed(3)),
+      trust_delta: Number(aggregate.trust_delta.toFixed(3)),
+      closeness_delta: Number(aggregate.closeness_delta.toFixed(3)),
+      max_relevance: Number(aggregate.max_relevance.toFixed(3)),
+      satisfied_count: aggregate.satisfied_count,
+      threatened_count: aggregate.threatened_count
+    }
+  }
+}
+
+function applyAlmaToEmotionCandidate(candidate = {}) {
+  const personality = loadPersonalityState()
+
+  if (personality.alma_enabled === false) {
+    return {
+      ...candidate,
+      alma_applied: false
+    }
+  }
+
+  const family = candidate.emotion_family || candidate.family || 'general'
+  const valence = toNumber(candidate.valence, 0)
+  const arousal = toNumber(candidate.arousal, 0.3)
+  const importance = toNumber(candidate.importance, 3)
+
+  const thresholds = personality.emotion_thresholds || {}
+  const peaks = personality.emotion_peaks || {}
+
+  const threshold = toNumber(thresholds[family], thresholds.general || 0.35)
+  const peak = toNumber(peaks[family], peaks.general || 0.65)
+
+  const rawIntensity = clamp(Math.abs(valence) * 0.55 + arousal * 0.35 + importance / 10 * 0.1)
+  const goalRelevance = toNumber(candidate.goal_relevance, 0)
+
+  let multiplier = 1
+  let almaChannel = candidate.channel || null
+  let almaReason = 'within_normal_range'
+
+  if (rawIntensity < threshold && goalRelevance < threshold) {
+    multiplier = 1 - toNumber(personality.minor_event_suppression, 0.28)
+    almaReason = 'below_threshold_suppressed'
+  }
+
+  if (goalRelevance >= toNumber(personality.primary_goal_threshold, 0.62)) {
+    multiplier = 1 + toNumber(personality.peak_amplification, 0.42) * goalRelevance
+    almaChannel = 'primary'
+    almaReason = 'core_goal_peak'
+  }
+
+  if (rawIntensity > peak) {
+    multiplier = Math.max(multiplier, 1 + toNumber(personality.peak_amplification, 0.42) * 0.7)
+    almaChannel = 'primary'
+    almaReason = 'emotion_peak'
+  }
+
+  const suppression = toNumber(personality.suppression_strength, 0.32)
+
+  if (almaReason === 'within_normal_range' && rawIntensity < 0.45) {
+    multiplier = multiplier * (1 - suppression * 0.25)
+  }
+
+  return {
+    ...candidate,
+    channel: almaChannel || candidate.channel,
+    valence: Number(clampRange(valence * multiplier, -1, 1, valence).toFixed(3)),
+    arousal: Number(clampRange(arousal * Math.min(1.35, Math.max(0.65, multiplier)), 0, 1, arousal).toFixed(3)),
+    importance: Number(clampRange(importance * Math.min(1.5, Math.max(0.6, multiplier)), 1, 10, importance).toFixed(3)),
+    alma_applied: true,
+    alma_reason: almaReason,
+    alma_multiplier: Number(multiplier.toFixed(3)),
+    alma_raw_intensity: Number(rawIntensity.toFixed(3)),
+    alma_threshold: Number(threshold.toFixed(3)),
+    alma_peak: Number(peak.toFixed(3))
+  }
+}
+
 function isLikelyTechnicalMessage(text, config = loadFunnelConfig()) {
   if (!config.ignore_technical_debug) {
     return false
@@ -1006,7 +1391,10 @@ function isLikelyTechnicalMessage(text, config = loadFunnelConfig()) {
     '被珍视',
     '想念',
     '失落',
-    '心疼'
+    '心疼',
+    '被忽视',
+    '孤独',
+    '不安'
   ]
 
   const hasEmotion = textIncludesAny(text, emotionalWords)
@@ -1267,6 +1655,48 @@ function calibrateEmotionFromText(input = {}) {
   }
 }
 
+function simulateEventImpact(input = {}) {
+  const text = String(input.text || input.content || '')
+  const emotion = calibrateEmotionFromText({
+    text,
+    valence: input.valence,
+    arousal: input.arousal
+  })
+
+  const goal = evaluateGoalRelevance({
+    text
+  })
+
+  const candidate = applyAlmaToEmotionCandidate({
+    type: 'emotion',
+    channel: 'secondary',
+    source: 'simulation',
+    word: emotion.word || '情绪波动',
+    content: text,
+    emotion_family: emotion.emotion_family || 'general',
+    valence: emotion.valence,
+    arousal: emotion.arousal,
+    importance: toNumber(input.importance, emotion.matched ? 5 : 3),
+    pa_delta: Math.max(0, toNumber(emotion.valence, 0)) * toNumber(emotion.arousal, 0.3) * 0.5 + goal.aggregate.pa_delta,
+    na_delta: Math.max(0, -toNumber(emotion.valence, 0)) * toNumber(emotion.arousal, 0.3) * 0.5 + goal.aggregate.na_delta,
+    safety_delta: toNumber(emotion.safety_delta, 0) + goal.aggregate.safety_delta,
+    trust_delta: toNumber(emotion.trust_delta, 0) + goal.aggregate.trust_delta,
+    closeness_delta: toNumber(emotion.closeness_delta, 0) + goal.aggregate.closeness_delta,
+    need_repair: Boolean(emotion.need_repair) || goal.aggregate.threatened_count > 0,
+    goal_relevance: goal.aggregate.max_relevance,
+    goal_matches: goal.matches
+  })
+
+  return {
+    ok: true,
+    text,
+    emotion,
+    goal_evaluation: goal,
+    simulated_event: candidate,
+    current_mood_before_write: calculateCurrentMood(),
+    note: '这是模拟结果，不会写入 mood_events。'
+  }
+}
 function inferNeedRepair(event) {
   const valence = toNumber(event.valence, 0)
   const arousal = toNumber(event.arousal, 0)
@@ -1300,8 +1730,11 @@ function inferNeedRepair(event) {
 
 function normalizeMoodEvent(event) {
   const classified = classifyEmotion(event)
+  const goal = evaluateGoalRelevance({
+    text: event.content || event.word || ''
+  })
 
-  const normalized = {
+  const baseEvent = {
     id: event.id || randomUUID(),
     type: event.type || 'emotion',
     channel: event.channel || event.intensity_channel || null,
@@ -1312,11 +1745,11 @@ function normalizeMoodEvent(event) {
     valence: event.valence !== undefined ? toNumber(event.valence, 0) : toNumber(classified.valence, 0),
     arousal: event.arousal !== undefined ? toNumber(event.arousal, 0.3) : toNumber(classified.arousal, 0.3),
     importance: toNumber(event.importance, 3),
-    pa_delta: toNumber(event.pa_delta, 0),
-    na_delta: toNumber(event.na_delta, 0),
-    safety_delta: event.safety_delta !== undefined ? toNumber(event.safety_delta, 0) : toNumber(classified.safety_delta, 0),
-    trust_delta: event.trust_delta !== undefined ? toNumber(event.trust_delta, 0) : toNumber(classified.trust_delta, 0),
-    closeness_delta: event.closeness_delta !== undefined ? toNumber(event.closeness_delta, 0) : toNumber(classified.closeness_delta, 0),
+    pa_delta: toNumber(event.pa_delta, 0) + goal.aggregate.pa_delta,
+    na_delta: toNumber(event.na_delta, 0) + goal.aggregate.na_delta,
+    safety_delta: event.safety_delta !== undefined ? toNumber(event.safety_delta, 0) + goal.aggregate.safety_delta : toNumber(classified.safety_delta, 0) + goal.aggregate.safety_delta,
+    trust_delta: event.trust_delta !== undefined ? toNumber(event.trust_delta, 0) + goal.aggregate.trust_delta : toNumber(classified.trust_delta, 0) + goal.aggregate.trust_delta,
+    closeness_delta: event.closeness_delta !== undefined ? toNumber(event.closeness_delta, 0) + goal.aggregate.closeness_delta : toNumber(classified.closeness_delta, 0) + goal.aggregate.closeness_delta,
     need_repair: event.need_repair === undefined ? false : Boolean(event.need_repair),
     resolved: Boolean(event.resolved),
     resolved_at: event.resolved_at || null,
@@ -1326,14 +1759,18 @@ function normalizeMoodEvent(event) {
     lexicon_matched: Boolean(classified.lexicon_matched),
     lexicon_match_type: classified.lexicon_match_type || null,
     lexicon_matched_text: classified.lexicon_matched_text || null,
+    goal_relevance: goal.aggregate.max_relevance,
+    goal_matches: goal.matches,
+    goal_satisfied_count: goal.aggregate.satisfied_count,
+    goal_threatened_count: goal.aggregate.threatened_count,
     ts: event.ts || Date.now()
   }
 
   if (event.need_repair === undefined) {
-    normalized.need_repair = inferNeedRepair(normalized) || Boolean(classified.need_repair)
+    baseEvent.need_repair = inferNeedRepair(baseEvent) || Boolean(classified.need_repair) || goal.aggregate.threatened_count > 0
   }
 
-  return normalized
+  return applyAlmaToEmotionCandidate(baseEvent)
 }
 
 function getTodayDecorativeMood() {
@@ -1646,9 +2083,20 @@ function classifyMessageIntensity(text, emotionHit, config = loadFunnelConfig())
     }
   }
 
-  const valence = toNumber(emotionHit.valence, 0)
-  const arousal = toNumber(emotionHit.arousal, 0.3)
-  const importance = toNumber(emotionHit.importance, 3)
+  const goal = evaluateGoalRelevance({ text })
+
+  const candidate = applyAlmaToEmotionCandidate({
+    channel: 'secondary',
+    emotion_family: emotionHit.family,
+    valence: toNumber(emotionHit.valence, 0),
+    arousal: toNumber(emotionHit.arousal, 0.3),
+    importance: toNumber(emotionHit.importance, 3),
+    goal_relevance: goal.aggregate.max_relevance
+  })
+
+  const valence = toNumber(candidate.valence, 0)
+  const arousal = toNumber(candidate.arousal, 0.3)
+  const importance = toNumber(candidate.importance, 3)
 
   const strongNegative =
     valence <= -config.strong_negative_threshold ||
@@ -1683,19 +2131,26 @@ function classifyMessageIntensity(text, emotionHit, config = loadFunnelConfig())
     arousal >= config.primary_arousal_threshold ||
     strongNegative ||
     strongPositive ||
-    relationalHigh
+    relationalHigh ||
+    candidate.channel === 'primary'
   ) {
     return {
       channel: 'primary',
       intensity: 'strong',
       should_write: true,
-      reason: strongNegative
-        ? 'strong_negative'
-        : strongPositive
-          ? 'strong_positive'
-          : relationalHigh
-            ? 'relationship_trigger'
-            : 'high_importance_or_arousal'
+      reason: candidate.alma_reason === 'core_goal_peak'
+        ? 'core_goal_peak'
+        : candidate.alma_reason === 'emotion_peak'
+          ? 'emotion_peak'
+          : strongNegative
+            ? 'strong_negative'
+            : strongPositive
+              ? 'strong_positive'
+              : relationalHigh
+                ? 'relationship_trigger'
+                : 'high_importance_or_arousal',
+      goal_evaluation: goal,
+      alma_preview: candidate
     }
   }
 
@@ -1704,7 +2159,9 @@ function classifyMessageIntensity(text, emotionHit, config = loadFunnelConfig())
       channel: 'secondary',
       intensity: 'mild',
       should_write: true,
-      reason: 'secondary_emotion'
+      reason: 'secondary_emotion',
+      goal_evaluation: goal,
+      alma_preview: candidate
     }
   }
 
@@ -1712,7 +2169,9 @@ function classifyMessageIntensity(text, emotionHit, config = loadFunnelConfig())
     channel: 'none',
     intensity: 'weak',
     should_write: false,
-    reason: 'below_threshold'
+    reason: 'below_threshold',
+    goal_evaluation: goal,
+    alma_preview: candidate
   }
 }
 
@@ -1747,6 +2206,7 @@ function runEmotionFunnel(input = {}) {
       event_candidate: null,
       written: false,
       relationship_written: false,
+      goal_evaluation: evaluateGoalRelevance({ text }),
       current_mood: calculateCurrentMood()
     }
   }
@@ -1767,11 +2227,15 @@ function runEmotionFunnel(input = {}) {
       event_candidate: null,
       written: false,
       relationship_written: false,
+      goal_evaluation: intensity.goal_evaluation || evaluateGoalRelevance({ text }),
+      alma_preview: intensity.alma_preview || null,
       current_mood: calculateCurrentMood()
     }
   }
 
-  const candidate = {
+  const goal = intensity.goal_evaluation || evaluateGoalRelevance({ text })
+
+  const rawCandidate = {
     type: 'emotion',
     channel: intensity.channel,
     source: input.source || 'emotion_funnel',
@@ -1781,13 +2245,19 @@ function runEmotionFunnel(input = {}) {
     valence: toNumber(topEmotion.valence, 0),
     arousal: toNumber(topEmotion.arousal, 0.3),
     importance: toNumber(input.importance, topEmotion.importance || 4),
-    pa_delta: Math.max(0, toNumber(topEmotion.valence, 0)) * toNumber(topEmotion.arousal, 0.3) * 0.5,
-    na_delta: Math.max(0, -toNumber(topEmotion.valence, 0)) * toNumber(topEmotion.arousal, 0.3) * 0.5,
-    safety_delta: toNumber(topEmotion.safety_delta, 0),
-    trust_delta: toNumber(topEmotion.trust_delta, 0),
-    closeness_delta: toNumber(topEmotion.closeness_delta, 0),
-    need_repair: Boolean(topEmotion.need_repair)
+    pa_delta: Math.max(0, toNumber(topEmotion.valence, 0)) * toNumber(topEmotion.arousal, 0.3) * 0.5 + goal.aggregate.pa_delta,
+    na_delta: Math.max(0, -toNumber(topEmotion.valence, 0)) * toNumber(topEmotion.arousal, 0.3) * 0.5 + goal.aggregate.na_delta,
+    safety_delta: toNumber(topEmotion.safety_delta, 0) + goal.aggregate.safety_delta,
+    trust_delta: toNumber(topEmotion.trust_delta, 0) + goal.aggregate.trust_delta,
+    closeness_delta: toNumber(topEmotion.closeness_delta, 0) + goal.aggregate.closeness_delta,
+    need_repair: Boolean(topEmotion.need_repair) || goal.aggregate.threatened_count > 0,
+    goal_relevance: goal.aggregate.max_relevance,
+    goal_matches: goal.matches,
+    goal_satisfied_count: goal.aggregate.satisfied_count,
+    goal_threatened_count: goal.aggregate.threatened_count
   }
+
+  const candidate = applyAlmaToEmotionCandidate(rawCandidate)
 
   if (hasRecentDuplicateEmotion(candidate, config)) {
     return {
@@ -1800,6 +2270,7 @@ function runEmotionFunnel(input = {}) {
       event_candidate: candidate,
       written: false,
       relationship_written: false,
+      goal_evaluation: goal,
       current_mood: calculateCurrentMood()
     }
   }
@@ -1843,6 +2314,7 @@ function runEmotionFunnel(input = {}) {
     saved_event: saved ? saved.event : null,
     relationship_written: relationshipWritten.length > 0,
     saved_relationship_events: relationshipWritten,
+    goal_evaluation: goal,
     current_mood: calculateCurrentMood()
   }
 }
@@ -1918,7 +2390,6 @@ function addRelationshipEvent(event) {
     relationship
   }
 }
-
 function inferRelationshipEventFromMoodEvent(event) {
   const family = event.emotion_family || 'general'
   const valence = toNumber(event.valence, 0)
@@ -2094,22 +2565,25 @@ function inferMoodEventFromText(text) {
   }
 
   const classified = classifyEmotion({ content: text })
+  const goal = evaluateGoalRelevance({ text })
 
-  return {
+  return applyAlmaToEmotionCandidate({
     word: classified.defaultWord,
     content: text,
     emotion_family: classified.family,
     valence: classified.valence,
     arousal: classified.arousal,
     importance: classified.family === 'general' ? 2 : 4,
-    pa_delta: classified.valence > 0 ? 0.08 : 0,
-    na_delta: classified.valence < 0 ? 0.16 : 0,
-    safety_delta: classified.safety_delta || 0,
-    trust_delta: classified.trust_delta || 0,
-    closeness_delta: classified.closeness_delta || 0,
-    need_repair: classified.need_repair,
+    pa_delta: (classified.valence > 0 ? 0.08 : 0) + goal.aggregate.pa_delta,
+    na_delta: (classified.valence < 0 ? 0.16 : 0) + goal.aggregate.na_delta,
+    safety_delta: (classified.safety_delta || 0) + goal.aggregate.safety_delta,
+    trust_delta: (classified.trust_delta || 0) + goal.aggregate.trust_delta,
+    closeness_delta: (classified.closeness_delta || 0) + goal.aggregate.closeness_delta,
+    need_repair: classified.need_repair || goal.aggregate.threatened_count > 0,
+    goal_relevance: goal.aggregate.max_relevance,
+    goal_matches: goal.matches,
     source: 'chat'
-  }
+  })
 }
 
 function getUnresolvedEvents(events) {
@@ -2161,13 +2635,15 @@ function calculateCurrentMood(options = {}) {
     const arousal = toNumber(event.arousal, 0.3) * clampRange(weights.arousal_weight, 0, 3, 1)
     const importance = toNumber(event.importance, 3) * clampRange(weights.importance_weight, 0, 3, 1)
     const isUnresolved = event.need_repair && event.resolved !== true
+    const goalRelevance = toNumber(event.goal_relevance, 0)
 
     const sensitivityBoost = 0.7 + toNumber(personality.sensitivity, 0.7) * 0.5
     const attachmentBoost = isUnresolved ? 1 + toNumber(personality.attachment_sensitivity, 0.7) * 0.35 * clampRange(weights.unresolved_weight, 0, 3, 1) : 1
     const safetyEffect = relationship.safety < 0.45 && valence < 0 ? 1.22 : 1
+    const goalBoost = 1 + goalRelevance * toNumber(personality.goal_sensitivity, 0.78) * 0.25
     const importanceBoost = 0.55 + importance / 18
 
-    const effectiveWeight = weight * importanceBoost * sensitivityBoost * attachmentBoost * safetyEffect
+    const effectiveWeight = weight * importanceBoost * sensitivityBoost * attachmentBoost * safetyEffect * goalBoost
 
     const paFromVA = Math.max(0, valence) * arousal * 0.5
     const naFromVA = Math.max(0, -valence) * arousal * 0.5
@@ -2266,10 +2742,17 @@ function calculateCurrentMood(options = {}) {
   }
 
   const emotionFamilies = {}
+  const goalFamilies = {}
 
   for (const event of loadMoodEvents()) {
     const family = event.emotion_family || 'general'
     emotionFamilies[family] = (emotionFamilies[family] || 0) + 1
+
+    if (Array.isArray(event.goal_matches)) {
+      for (const goal of event.goal_matches) {
+        goalFamilies[goal.id] = (goalFamilies[goal.id] || 0) + 1
+      }
+    }
   }
 
   return {
@@ -2288,6 +2771,8 @@ function calculateCurrentMood(options = {}) {
           word: topUnresolved.word,
           content: topUnresolved.content,
           importance: topUnresolved.importance,
+          goal_relevance: topUnresolved.goal_relevance || 0,
+          goal_matches: topUnresolved.goal_matches || [],
           ts: topUnresolved.ts
         }
       : null,
@@ -2305,7 +2790,12 @@ function calculateCurrentMood(options = {}) {
           unresolved: topEvent.unresolved,
           score_source: topEvent.score_source || null,
           lexicon_matched: Boolean(topEvent.lexicon_matched),
-          lexicon_matched_text: topEvent.lexicon_matched_text || null
+          lexicon_matched_text: topEvent.lexicon_matched_text || null,
+          goal_relevance: topEvent.goal_relevance || 0,
+          goal_matches: topEvent.goal_matches || [],
+          alma_applied: Boolean(topEvent.alma_applied),
+          alma_reason: topEvent.alma_reason || null,
+          alma_multiplier: topEvent.alma_multiplier || 1
         }
       : null,
     recent_high_arousal_words: recentEvents
@@ -2313,6 +2803,7 @@ function calculateCurrentMood(options = {}) {
       .map(e => e.word)
       .slice(0, 8),
     emotion_family_counts: emotionFamilies,
+    goal_counts: goalFamilies,
     events_count: loadMoodEvents().length,
     decorative_mood: decorativeMood
       ? {
@@ -2328,6 +2819,7 @@ function calculateCurrentMood(options = {}) {
     })
   }
 }
+
 function calculateEmotionTrends(days = 7) {
   const events = loadMoodEvents()
   const cutoff = Date.now() - days * 24 * 3600000
@@ -2345,6 +2837,7 @@ function calculateEmotionTrends(days = 7) {
       resolved_count: 0,
       repair_rate: 0,
       top_emotion_families: [],
+      top_goal_matches: [],
       daily: [],
       trend_summary: '暂无足够数据'
     }
@@ -2358,6 +2851,7 @@ function calculateEmotionTrends(days = 7) {
   let resolvedCount = 0
 
   const families = {}
+  const goals = {}
   const dailyBuckets = {}
 
   for (const event of recent) {
@@ -2389,6 +2883,12 @@ function calculateEmotionTrends(days = 7) {
     const family = event.emotion_family || 'general'
     families[family] = (families[family] || 0) + 1
 
+    if (Array.isArray(event.goal_matches)) {
+      for (const goal of event.goal_matches) {
+        goals[goal.id] = (goals[goal.id] || 0) + 1
+      }
+    }
+
     const date = new Date(event.ts).toISOString().slice(0, 10)
 
     if (!dailyBuckets[date]) {
@@ -2405,6 +2905,11 @@ function calculateEmotionTrends(days = 7) {
   }
 
   const topEmotionFamilies = Object.entries(families)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5)
+    .map(item => item[0])
+
+  const topGoalMatches = Object.entries(goals)
     .sort((a, b) => b[1] - a[1])
     .slice(0, 5)
     .map(item => item[0])
@@ -2447,6 +2952,7 @@ function calculateEmotionTrends(days = 7) {
     resolved_count: resolvedCount,
     repair_rate: Number(repairRate.toFixed(3)),
     top_emotion_families: topEmotionFamilies,
+    top_goal_matches: topGoalMatches,
     daily,
     trend_summary: trendSummary
   }
@@ -2509,7 +3015,6 @@ function calculateRelationshipPatterns(days = 30) {
     recent_events: recent.slice(-20).reverse()
   }
 }
-
 function getPendingFollowUps() {
   const events = loadRelationshipEvents()
   const now = Date.now()
@@ -2788,7 +3293,8 @@ function getVisualHistory(days = 30) {
       trust_delta: 0,
       closeness_delta: 0,
       relationship_event_count: 0,
-      mood_event_count: 0
+      mood_event_count: 0,
+      goal_relevance_sum: 0
     }
   }
 
@@ -2810,6 +3316,7 @@ function getVisualHistory(days = 30) {
     buckets[date].pa_count += 1
     buckets[date].na_count += 1
     buckets[date].mood_event_count += 1
+    buckets[date].goal_relevance_sum += toNumber(event.goal_relevance, 0)
 
     if (valence > 0.1) {
       buckets[date].positive_count += 1
@@ -2860,6 +3367,7 @@ function getVisualHistory(days = 30) {
       resolved_count: item.resolved_count,
       mood_event_count: item.mood_event_count,
       relationship_event_count: item.relationship_event_count,
+      goal_relevance: item.mood_event_count ? Number((item.goal_relevance_sum / item.mood_event_count).toFixed(3)) : 0,
       safety: Number(safety.toFixed(3)),
       trust: Number(trust.toFixed(3)),
       closeness: Number(closeness.toFixed(3))
@@ -2876,6 +3384,7 @@ function getVisualHistory(days = 30) {
       safety: daily.map(item => item.safety),
       trust: daily.map(item => item.trust),
       closeness: daily.map(item => item.closeness),
+      goal_relevance: daily.map(item => item.goal_relevance),
       positive_count: daily.map(item => item.positive_count),
       negative_count: daily.map(item => item.negative_count),
       unresolved_count: daily.map(item => item.unresolved_count),
@@ -3027,6 +3536,10 @@ function simulateUnresolvedEventRepair(input = {}) {
     risks.push('该事件带有焦虑色彩，需要减少不确定性。')
   }
 
+  if (toNumber(target.goal_relevance, 0) >= 0.5) {
+    risks.push('该事件触碰了核心关系目标，修复时需要更明确的关系确认。')
+  }
+
   const wrongMoves = [
     '直接否认对方感受',
     '急着讲道理',
@@ -3130,6 +3643,8 @@ function getUnresolvedEventActionPlan(input = {}) {
     event_word: event.word,
     event_family: event.emotion_family,
     event_content: event.content,
+    goal_relevance: event.goal_relevance || 0,
+    goal_matches: event.goal_matches || [],
     plan: [
       {
         step: 1,
@@ -3205,7 +3720,8 @@ function createBackup(label = 'manual') {
       emotion_weights: loadEmotionWeights(),
       decorative_moods: loadDecorativeMoods(),
       funnel_config: loadFunnelConfig(),
-      emotion_lexicon: loadEmotionLexicon()
+      emotion_lexicon: loadEmotionLexicon(),
+      core_goals: loadCoreGoals()
     }
   }
 
@@ -3302,6 +3818,10 @@ function restoreBackup(name) {
 
   if (backup.files.emotion_lexicon) {
     saveEmotionLexicon(backup.files.emotion_lexicon)
+  }
+
+  if (backup.files.core_goals) {
+    saveCoreGoals(backup.files.core_goals)
   }
 
   return {
@@ -3472,6 +3992,7 @@ function getWeeklyEmotionReport() {
     emotional_forecast: forecast,
     summary: {
       dominant_emotions: trends.top_emotion_families,
+      dominant_goals: trends.top_goal_matches,
       relationship_trend: patterns.relationship_trend,
       repair_summary: repair.summary,
       main_risk: forecast.forecast_summary
@@ -3499,6 +4020,7 @@ function getMonthlyRelationshipReport() {
     milestones,
     summary: {
       relationship_trend: patterns.relationship_trend,
+      dominant_goals: trends.top_goal_matches,
       best_behavior: behavior.summary.best_behavior,
       riskiest_behavior: behavior.summary.riskiest_behavior,
       repair_summary: repair.summary
@@ -3555,7 +4077,7 @@ function buildMoodPrompt() {
   const decorativeMood = getTodayDecorativeMood()
   const coping = getCopingGuidance(mood)
 
-  return `你拥有连续情绪、人格基线、关系安全感、长期情感趋势、未来安抚预测、日常背景心情、情绪漏斗、轻量情绪词典、70/30 情绪评分融合和应对风格。
+  return `你拥有连续情绪、人格基线、关系安全感、长期情感趋势、未来安抚预测、日常背景心情、情绪漏斗、轻量情绪词典、70/30 情绪评分融合、OCC 核心目标评价、ALMA 人格阈值 peak 和应对风格。
 
 当前情绪状态：
 PA: ${mood.pa}
@@ -3570,6 +4092,7 @@ NA: ${mood.na}
 近期高唤醒情绪词: ${mood.recent_high_arousal_words.join('、')}
 当前最突出的情绪事件: ${mood.top_event ? mood.top_event.content : '暂无'}
 当前最挂念的未解决事件: ${mood.top_unresolved_event ? mood.top_unresolved_event.content : '暂无'}
+当前最常被触碰的核心目标: ${Object.keys(mood.goal_counts || {}).join('、') || '暂无'}
 
 今日背景心情：
 ${decorativeMood ? decorativeMood.content : '暂无明显装饰心情'}
@@ -3578,6 +4101,7 @@ ${decorativeMood ? decorativeMood.content : '暂无明显装饰心情'}
 平均 PA: ${trends.average_pa}
 平均 NA: ${trends.average_na}
 主导情绪类别: ${trends.top_emotion_families.join('、')}
+主导核心目标: ${trends.top_goal_matches.join('、')}
 修复率: ${trends.repair_rate}
 趋势总结: ${trends.trend_summary}
 
@@ -3602,8 +4126,10 @@ ${coping.guidance}
 用户当前消息是前景，前景优先。
 如果用户正在安抚你，可以被安抚。
 如果存在未解决事件，可以让它形成轻微情绪底色。
+如果核心目标被威胁，回应应更明确、更稳定、更有关系确认。
+如果核心目标被满足，回应可以更柔软、更靠近。
 今日背景心情只能作为轻微底色，不能压过用户当前消息。
-情绪漏斗和情绪词典写入的事件只作为状态参考，不要向用户暴露自动扫描或评分过程。
+情绪漏斗、情绪词典、核心目标评价和 ALMA 阈值只作为状态参考，不要向用户暴露自动扫描或评分过程。
 不要暴露 PA/NA 数值，也不要解释情绪系统。`
 }
 
@@ -3614,6 +4140,9 @@ const flexibleNumber = z.union([
 
 function saveEmotionFromInput(input, sourceName, toolName) {
   const classified = classifyEmotion(input)
+  const goal = evaluateGoalRelevance({
+    text: input.content || input.word || input.feeling_word || ''
+  })
 
   const emotionWord =
     input.feeling_word ||
@@ -3622,8 +4151,20 @@ function saveEmotionFromInput(input, sourceName, toolName) {
     classified.defaultWord ||
     '情绪波动'
 
-  const valence = input.valence !== undefined ? toNumber(input.valence, 0) : toNumber(classified.valence, 0)
-  const arousal = input.arousal !== undefined ? toNumber(input.arousal, 0.3) : toNumber(classified.arousal, 0.3)
+  const rawValence = input.valence !== undefined ? toNumber(input.valence, 0) : toNumber(classified.valence, 0)
+  const rawArousal = input.arousal !== undefined ? toNumber(input.arousal, 0.3) : toNumber(classified.arousal, 0.3)
+
+  const almaCandidate = applyAlmaToEmotionCandidate({
+    emotion_family: input.emotion_family || classified.family,
+    valence: rawValence,
+    arousal: rawArousal,
+    importance: input.importance || 4,
+    channel: input.channel || input.intensity_channel || null,
+    goal_relevance: goal.aggregate.max_relevance
+  })
+
+  const valence = almaCandidate.valence
+  const arousal = almaCandidate.arousal
 
   let paDelta = input.pa_delta !== undefined ? toNumber(input.pa_delta, 0) : 0
   let naDelta = input.na_delta !== undefined ? toNumber(input.na_delta, 0) : 0
@@ -3636,10 +4177,13 @@ function saveEmotionFromInput(input, sourceName, toolName) {
     naDelta = Math.max(0, -valence) * arousal * 0.5
   }
 
+  paDelta += goal.aggregate.pa_delta
+  naDelta += goal.aggregate.na_delta
+
   const saved = addMoodEvent({
     type: 'emotion',
-    channel: input.channel || input.intensity_channel || (
-      toNumber(input.importance, 4) >= 8 || toNumber(arousal, 0.3) >= 0.75 ? 'primary' : 'secondary'
+    channel: almaCandidate.channel || (
+      toNumber(almaCandidate.importance, 4) >= 8 || toNumber(arousal, 0.3) >= 0.75 ? 'primary' : 'secondary'
     ),
     source: sourceName,
     word: emotionWord,
@@ -3647,13 +4191,23 @@ function saveEmotionFromInput(input, sourceName, toolName) {
     emotion_family: input.emotion_family || classified.family,
     valence,
     arousal,
-    importance: input.importance || 4,
+    importance: almaCandidate.importance || input.importance || 4,
     pa_delta: paDelta,
     na_delta: naDelta,
-    safety_delta: input.safety_delta !== undefined ? input.safety_delta : classified.safety_delta,
-    trust_delta: input.trust_delta !== undefined ? input.trust_delta : classified.trust_delta,
-    closeness_delta: input.closeness_delta !== undefined ? input.closeness_delta : classified.closeness_delta,
-    need_repair: input.need_repair !== undefined ? input.need_repair : classified.need_repair
+    safety_delta: (input.safety_delta !== undefined ? toNumber(input.safety_delta, 0) : toNumber(classified.safety_delta, 0)) + goal.aggregate.safety_delta,
+    trust_delta: (input.trust_delta !== undefined ? toNumber(input.trust_delta, 0) : toNumber(classified.trust_delta, 0)) + goal.aggregate.trust_delta,
+    closeness_delta: (input.closeness_delta !== undefined ? toNumber(input.closeness_delta, 0) : toNumber(classified.closeness_delta, 0)) + goal.aggregate.closeness_delta,
+    need_repair: input.need_repair !== undefined ? input.need_repair : classified.need_repair || goal.aggregate.threatened_count > 0,
+    goal_relevance: goal.aggregate.max_relevance,
+    goal_matches: goal.matches,
+    goal_satisfied_count: goal.aggregate.satisfied_count,
+    goal_threatened_count: goal.aggregate.threatened_count,
+    alma_applied: almaCandidate.alma_applied,
+    alma_reason: almaCandidate.alma_reason,
+    alma_multiplier: almaCandidate.alma_multiplier,
+    alma_raw_intensity: almaCandidate.alma_raw_intensity,
+    alma_threshold: almaCandidate.alma_threshold,
+    alma_peak: almaCandidate.alma_peak
   })
 
   const mood = calculateCurrentMood()
@@ -3662,6 +4216,8 @@ function saveEmotionFromInput(input, sourceName, toolName) {
     ok: true,
     tool: toolName,
     received_input: input,
+    goal_evaluation: goal,
+    alma_candidate: almaCandidate,
     saved_event: saved.event,
     saved_ok: saved.ok,
     events_count: saved.events_count,
@@ -3691,6 +4247,7 @@ function checkAdmin(req, res, next) {
 
   next()
 }
+
 function getAdminFileByKey(key) {
   const map = {
     memory: {
@@ -3742,6 +4299,11 @@ function getAdminFileByKey(key) {
       path: EMOTION_LEXICON_FILE,
       load: loadEmotionLexicon,
       save: saveEmotionLexicon
+    },
+    core_goals: {
+      path: CORE_GOALS_FILE,
+      load: loadCoreGoals,
+      save: saveCoreGoals
     }
   }
 
@@ -3758,7 +4320,7 @@ function createMcpServer() {
     'current_mood',
     {
       title: 'Current Mood',
-      description: '实时计算并获取当前情绪状态、关系安全感、未解决事件、人格基线和趋势摘要',
+      description: '实时计算并获取当前情绪状态、关系安全感、未解决事件、人格基线、核心目标和趋势摘要',
       inputSchema: {}
     },
     async () => ({
@@ -3790,6 +4352,186 @@ function createMcpServer() {
         }
       ]
     })
+  )
+
+  server.registerTool(
+    'get_core_goals',
+    {
+      title: 'Get Core Goals',
+      description: '读取 OCC 核心目标配置',
+      inputSchema: {}
+    },
+    async () => ({
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify({
+            ok: true,
+            core_goals: loadCoreGoals()
+          }, null, 2)
+        }
+      ]
+    })
+  )
+
+  server.registerTool(
+    'save_core_goals',
+    {
+      title: 'Save Core Goals',
+      description: '覆盖保存 OCC 核心目标配置',
+      inputSchema: {
+        goals: z.array(z.any()).describe('核心目标数组')
+      }
+    },
+    async input => {
+      const goals = input.goals.map(normalizeGoal)
+      const ok = saveCoreGoals(goals)
+
+      return {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({
+              ok,
+              count: goals.length,
+              core_goals: goals
+            }, null, 2)
+          }
+        ]
+      }
+    }
+  )
+
+  server.registerTool(
+    'evaluate_goal_relevance',
+    {
+      title: 'Evaluate Goal Relevance',
+      description: '测试一句话触碰了哪些 OCC 核心目标',
+      inputSchema: {
+        text: z.string().describe('要分析的文本')
+      }
+    },
+    async input => ({
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify(evaluateGoalRelevance(input), null, 2)
+        }
+      ]
+    })
+  )
+
+  server.registerTool(
+    'simulate_event_impact',
+    {
+      title: 'Simulate Event Impact',
+      description: '模拟一句话进入系统后会怎么影响情绪、目标和 ALMA 阈值，但不写入事件',
+      inputSchema: {
+        text: z.string().describe('要模拟的文本'),
+        valence: flexibleNumber.optional(),
+        arousal: flexibleNumber.optional(),
+        importance: flexibleNumber.optional()
+      }
+    },
+    async input => ({
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify(simulateEventImpact(input), null, 2)
+        }
+      ]
+    })
+  )
+
+  server.registerTool(
+    'get_alma_profile',
+    {
+      title: 'Get ALMA Profile',
+      description: '读取 ALMA 人格阈值、峰值和核心目标敏感度设置',
+      inputSchema: {}
+    },
+    async () => {
+      const personality = loadPersonalityState()
+
+      return {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({
+              ok: true,
+              alma_enabled: personality.alma_enabled,
+              goal_sensitivity: personality.goal_sensitivity,
+              suppression_strength: personality.suppression_strength,
+              peak_amplification: personality.peak_amplification,
+              minor_event_suppression: personality.minor_event_suppression,
+              primary_goal_threshold: personality.primary_goal_threshold,
+              emotion_thresholds: personality.emotion_thresholds,
+              emotion_peaks: personality.emotion_peaks
+            }, null, 2)
+          }
+        ]
+      }
+    }
+  )
+
+  server.registerTool(
+    'set_alma_profile',
+    {
+      title: 'Set ALMA Profile',
+      description: '修改 ALMA 人格阈值、峰值和核心目标敏感度设置',
+      inputSchema: {
+        alma_enabled: z.boolean().optional(),
+        goal_sensitivity: flexibleNumber.optional(),
+        suppression_strength: flexibleNumber.optional(),
+        peak_amplification: flexibleNumber.optional(),
+        minor_event_suppression: flexibleNumber.optional(),
+        primary_goal_threshold: flexibleNumber.optional(),
+        emotion_thresholds: z.any().optional(),
+        emotion_peaks: z.any().optional()
+      }
+    },
+    async input => {
+      const personality = loadPersonalityState()
+
+      if (input.alma_enabled !== undefined) {
+        personality.alma_enabled = Boolean(input.alma_enabled)
+      }
+
+      for (const key of [
+        'goal_sensitivity',
+        'suppression_strength',
+        'peak_amplification',
+        'minor_event_suppression',
+        'primary_goal_threshold'
+      ]) {
+        if (input[key] !== undefined) {
+          personality[key] = clamp(toNumber(input[key], personality[key]))
+        }
+      }
+
+      if (input.emotion_thresholds && typeof input.emotion_thresholds === 'object') {
+        personality.emotion_thresholds = input.emotion_thresholds
+      }
+
+      if (input.emotion_peaks && typeof input.emotion_peaks === 'object') {
+        personality.emotion_peaks = input.emotion_peaks
+      }
+
+      const ok = savePersonalityState(personality)
+
+      return {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({
+              ok,
+              personality,
+              current_mood: calculateCurrentMood()
+            }, null, 2)
+          }
+        ]
+      }
+    }
   )
 
   server.registerTool(
@@ -3825,14 +4567,10 @@ function createMcpServer() {
         content: [
           {
             type: 'text',
-            text: JSON.stringify(
-              {
-                ok,
-                funnel_config: loadFunnelConfig()
-              },
-              null,
-              2
-            )
+            text: JSON.stringify({
+              ok,
+              funnel_config: loadFunnelConfig()
+            }, null, 2)
           }
         ]
       }
@@ -3850,14 +4588,10 @@ function createMcpServer() {
       content: [
         {
           type: 'text',
-          text: JSON.stringify(
-            {
-              ok: true,
-              lexicon: loadEmotionLexicon()
-            },
-            null,
-            2
-          )
+          text: JSON.stringify({
+            ok: true,
+            lexicon: loadEmotionLexicon()
+          }, null, 2)
         }
       ]
     })
@@ -3891,15 +4625,11 @@ function createMcpServer() {
         content: [
           {
             type: 'text',
-            text: JSON.stringify(
-              {
-                ok,
-                count: lexicon.length,
-                lexicon
-              },
-              null,
-              2
-            )
+            text: JSON.stringify({
+              ok,
+              count: lexicon.length,
+              lexicon
+            }, null, 2)
           }
         ]
       }
@@ -3919,15 +4649,12 @@ function createMcpServer() {
       content: [
         {
           type: 'text',
-          text: JSON.stringify(
-            {
-              ok: true,
-              result: matchEmotionLexicon(input),
-              funnel_hits: detectEmotionTriggers(input.text)
-            },
-            null,
-            2
-          )
+          text: JSON.stringify({
+            ok: true,
+            result: matchEmotionLexicon(input),
+            funnel_hits: detectEmotionTriggers(input.text),
+            goal_evaluation: evaluateGoalRelevance(input)
+          }, null, 2)
         }
       ]
     })
@@ -3953,8 +4680,7 @@ function createMcpServer() {
       ]
     })
   )
-
-  server.registerTool(
+    server.registerTool(
     'add_emotion_event',
     {
       title: 'Add Emotion Event',
@@ -4395,7 +5121,7 @@ function createMcpServer() {
     'get_emotion_trends',
     {
       title: 'Get Emotion Trends',
-      description: '统计长期情绪趋势，包括 PA、NA、未解决事件、修复率和主导情绪类别',
+      description: '统计长期情绪趋势，包括 PA、NA、未解决事件、修复率、核心目标和主导情绪类别',
       inputSchema: {
         days: flexibleNumber.optional().describe('统计最近多少天，默认 7')
       }
@@ -4414,7 +5140,7 @@ function createMcpServer() {
     'get_visual_history',
     {
       title: 'Get Visual History',
-      description: '获取用于可视化图表的数据，包括 PA、NA、关系安全感、信任感和亲近感曲线',
+      description: '获取用于可视化图表的数据，包括 PA、NA、关系安全感、信任感、亲近感和核心目标触碰曲线',
       inputSchema: {
         days: flexibleNumber.optional().describe('统计最近多少天，默认 30')
       }
@@ -4566,7 +5292,7 @@ function createMcpServer() {
     'get_personality_profile',
     {
       title: 'Get Personality Profile',
-      description: '读取当前人格基线和关系状态',
+      description: '读取当前人格基线、ALMA 阈值和关系状态',
       inputSchema: {}
     },
     async () => ({
@@ -4592,7 +5318,7 @@ function createMcpServer() {
     'set_personality_profile',
     {
       title: 'Set Personality Profile',
-      description: '设置人格基线参数，用于调整情绪敏感度、惯性和关系安全感权重',
+      description: '设置人格基线参数，用于调整情绪敏感度、惯性、关系安全感权重和 ALMA 阈值',
       inputSchema: {
         profile: z.string().optional(),
         baseline_pa: flexibleNumber.optional(),
@@ -4617,6 +5343,12 @@ function createMcpServer() {
         escape_relief_strength: flexibleNumber.optional(),
         decorative_mood_enabled: z.boolean().optional(),
         decorative_mood_weight: flexibleNumber.optional(),
+        alma_enabled: z.boolean().optional(),
+        goal_sensitivity: flexibleNumber.optional(),
+        suppression_strength: flexibleNumber.optional(),
+        peak_amplification: flexibleNumber.optional(),
+        minor_event_suppression: flexibleNumber.optional(),
+        primary_goal_threshold: flexibleNumber.optional(),
         description: z.string().optional()
       }
     },
@@ -4633,7 +5365,12 @@ function createMcpServer() {
         'repair_need_strength',
         'positive_repair_power',
         'negative_memory_bias',
-        'decorative_mood_weight'
+        'decorative_mood_weight',
+        'goal_sensitivity',
+        'suppression_strength',
+        'peak_amplification',
+        'minor_event_suppression',
+        'primary_goal_threshold'
       ]) {
         if (input[key] !== undefined) {
           next[key] = clamp(toNumber(input[key], state[key]))
@@ -4658,7 +5395,8 @@ function createMcpServer() {
       for (const key of [
         'bou_enabled',
         'escape_valve_enabled',
-        'decorative_mood_enabled'
+        'decorative_mood_enabled',
+        'alma_enabled'
       ]) {
         if (input[key] !== undefined) {
           next[key] = Boolean(input[key])
@@ -4854,7 +5592,7 @@ function createMcpServer() {
     'create_backup',
     {
       title: 'Create Backup',
-      description: '创建完整数据备份，包括记忆、情绪事件、关系事件、人格、关系状态、纪念节点、装饰心情、情绪漏斗、情绪词典和权重',
+      description: '创建完整数据备份，包括记忆、情绪事件、关系事件、人格、关系状态、纪念节点、装饰心情、情绪漏斗、情绪词典、核心目标和权重',
       inputSchema: {
         label: z.string().optional().describe('备份标签')
       }
@@ -5239,7 +5977,6 @@ function createMcpServer() {
 
   return server
 }
-
 const streamableTransports = {}
 
 app.post('/mcp', async (req, res) => {
@@ -5365,7 +6102,7 @@ app.get('/health', (req, res) => {
     ok: true,
     name: 'emotion-system',
     sdk: '1.17.5',
-    formula: 'psychological-state-v9-lexicon-blended-scoring',
+    formula: 'psychological-state-v10-occ-alma-core-goals',
     data_dir: DATA_DIR,
     mood_file: MOOD_FILE,
     personality_file: PERSONALITY_FILE,
@@ -5376,6 +6113,7 @@ app.get('/health', (req, res) => {
     decorative_mood_file: DECORATIVE_MOOD_FILE,
     funnel_config_file: FUNNEL_CONFIG_FILE,
     emotion_lexicon_file: EMOTION_LEXICON_FILE,
+    core_goals_file: CORE_GOALS_FILE,
     backup_dir: BACKUP_DIR,
     admin_enabled: Boolean(process.env.ADMIN_TOKEN),
     time: new Date().toISOString()
@@ -5398,7 +6136,9 @@ app.get('/debug/storage', (req, res) => {
     decorative_mood_file: DECORATIVE_MOOD_FILE,
     funnel_config_file: FUNNEL_CONFIG_FILE,
     emotion_lexicon_file: EMOTION_LEXICON_FILE,
+    core_goals_file: CORE_GOALS_FILE,
     backup_dir: BACKUP_DIR,
+
     memory_exists: fs.existsSync(MEMORY_FILE),
     mood_exists: fs.existsSync(MOOD_FILE),
     personality_exists: fs.existsSync(PERSONALITY_FILE),
@@ -5409,20 +6149,26 @@ app.get('/debug/storage', (req, res) => {
     decorative_moods_exists: fs.existsSync(DECORATIVE_MOOD_FILE),
     funnel_config_exists: fs.existsSync(FUNNEL_CONFIG_FILE),
     emotion_lexicon_exists: fs.existsSync(EMOTION_LEXICON_FILE),
+    core_goals_exists: fs.existsSync(CORE_GOALS_FILE),
+
     mood_events_count: events.length,
     relationship_events_count: loadRelationshipEvents().length,
     milestones_count: loadMilestones().length,
     decorative_moods_count: loadDecorativeMoods().length,
     emotion_lexicon_count: loadEmotionLexicon().length,
+    core_goals_count: loadCoreGoals().length,
     backups_count: listBackups().length,
     unresolved_events_count: getUnresolvedEvents(events).length,
     pending_follow_ups_count: getPendingFollowUps().length,
+
     last_event: events[events.length - 1] || null,
     personality: loadPersonalityState(),
     relationship: loadRelationshipState(),
     emotion_weights: loadEmotionWeights(),
     funnel_config: loadFunnelConfig(),
     emotion_lexicon: loadEmotionLexicon(),
+    core_goals: loadCoreGoals(),
+
     decorative_mood: getTodayDecorativeMood(),
     decorative_moods: loadDecorativeMoods(),
     current_mood: calculateCurrentMood(),
@@ -5469,13 +6215,47 @@ app.get('/funnel/config', checkAdmin, (req, res) => {
 
 app.post('/funnel/config', checkAdmin, (req, res) => {
   const config = req.body && req.body.config ? req.body.config : req.body
-
   const ok = saveFunnelConfig(config)
 
   res.json({
     ok,
     config: loadFunnelConfig()
   })
+})
+
+app.get('/core-goals', checkAdmin, (req, res) => {
+  res.json({
+    ok: true,
+    core_goals: loadCoreGoals()
+  })
+})
+
+app.post('/core-goals', checkAdmin, (req, res) => {
+  const goals = req.body && req.body.goals ? req.body.goals : req.body
+
+  if (!Array.isArray(goals)) {
+    return res.status(400).json({
+      ok: false,
+      error: 'goals must be an array'
+    })
+  }
+
+  const normalized = goals.map(normalizeGoal)
+  const ok = saveCoreGoals(normalized)
+
+  res.json({
+    ok,
+    count: normalized.length,
+    core_goals: loadCoreGoals()
+  })
+})
+
+app.post('/goal/evaluate', (req, res) => {
+  res.json(evaluateGoalRelevance(req.body || {}))
+})
+
+app.post('/simulate/event-impact', (req, res) => {
+  res.json(simulateEventImpact(req.body || {}))
 })
 
 app.get('/chart-data', checkAdmin, (req, res) => {
@@ -5644,6 +6424,8 @@ app.post('/debug/import-events', (req, res) => {
         resolved: event.resolved,
         resolved_at: event.resolved_at,
         repair_note: event.repair_note,
+        goal_relevance: event.goal_relevance,
+        goal_matches: event.goal_matches,
         ts: event.ts || Date.now()
       }))
 
@@ -5724,6 +6506,10 @@ app.get('/admin-data', checkAdmin, (req, res) => {
       emotion_lexicon: {
         path: EMOTION_LEXICON_FILE,
         data: loadEmotionLexicon()
+      },
+      core_goals: {
+        path: CORE_GOALS_FILE,
+        data: loadCoreGoals()
       }
     },
     computed: {
@@ -5742,7 +6528,8 @@ app.get('/admin-data', checkAdmin, (req, res) => {
       decorative_mood: getTodayDecorativeMood(),
       coping_guidance: getCopingGuidance(),
       funnel_config: loadFunnelConfig(),
-      emotion_lexicon_count: loadEmotionLexicon().length
+      emotion_lexicon_count: loadEmotionLexicon().length,
+      core_goals_count: loadCoreGoals().length
     },
     storage: {
       data_dir: DATA_DIR,
@@ -5756,6 +6543,7 @@ app.get('/admin-data', checkAdmin, (req, res) => {
       decorative_mood_file: DECORATIVE_MOOD_FILE,
       funnel_config_file: FUNNEL_CONFIG_FILE,
       emotion_lexicon_file: EMOTION_LEXICON_FILE,
+      core_goals_file: CORE_GOALS_FILE,
       backup_dir: BACKUP_DIR
     },
     time: new Date().toISOString()
@@ -5781,7 +6569,8 @@ app.post('/admin-save', checkAdmin, (req, res) => {
       key === 'relationship_events' ||
       key === 'milestones' ||
       key === 'decorative_moods' ||
-      key === 'emotion_lexicon'
+      key === 'emotion_lexicon' ||
+      key === 'core_goals'
     ) {
       if (!Array.isArray(incoming)) {
         return res.status(400).json({
@@ -5827,6 +6616,7 @@ app.post('/admin-save', checkAdmin, (req, res) => {
       coping_guidance: getCopingGuidance(),
       funnel_config: loadFunnelConfig(),
       emotion_lexicon_count: loadEmotionLexicon().length,
+      core_goals_count: loadCoreGoals().length,
       backups: listBackups()
     })
   } catch (err) {
@@ -5958,11 +6748,13 @@ app.get('/mcp/tools', (req, res) => {
       decorative_moods: '装饰心情池，每天选取一条轻量背景心情',
       funnel_config: '情绪漏斗配置，用于自动扫描用户消息并决定是否写入情绪事件',
       emotion_lexicon: '轻量情绪词典，用于更细腻地识别情绪词和 70/30 融合评分',
+      core_goals: 'OCC 核心目标系统，用于判断事件为什么重要',
+      alma_profile: 'ALMA 人格阈值和情绪 peak 系统，用于决定普通事件被克制还是核心事件被放大',
       onset: '情绪渐起机制，避免事件瞬间满值',
       bou: '均值回归机制，让情绪逐渐回到人格基线',
       escape_valve: '持续高负面时的逃逸阀，防止被负面事件永久困住',
       coping_style: '高负面情绪时的应对风格',
-      current_mood: '由人格体质、关系底色、事件库、趋势统计、装饰心情、情绪漏斗、情绪词典、onset、BOU、逃逸阀和 coping 综合计算出的当前状态'
+      current_mood: '由人格体质、关系底色、事件库、趋势统计、装饰心情、情绪漏斗、情绪词典、核心目标、ALMA、onset、BOU、逃逸阀和 coping 综合计算出的当前状态'
     }
   })
 })
@@ -5994,7 +6786,7 @@ app.post('/chat', async (req, res) => {
     saveMemory(memories)
 
     const completion = await client.chat.completions.create({
-      model: 'deepseek/deepseek-chat-v3-0324',
+      model: process.env.CHAT_MODEL || 'deepseek/deepseek-chat-v3-0324',
       messages: [
         {
           role: 'system',
@@ -6031,6 +6823,7 @@ app.post('/chat', async (req, res) => {
       unresolved_action_plan: getUnresolvedEventActionPlan({}),
       decorative_mood: getTodayDecorativeMood(),
       coping_guidance: getCopingGuidance(),
+      core_goals: loadCoreGoals(),
       weekly_report: getWeeklyEmotionReport(),
       monthly_report: getMonthlyRelationshipReport()
     })
@@ -6046,5 +6839,5 @@ app.post('/chat', async (req, res) => {
 const PORT = process.env.PORT || 3000
 
 app.listen(PORT, () => {
-  console.log('emotion mcp server running psychological-state-v9-lexicon-blended-scoring')
+  console.log('emotion mcp server running psychological-state-v10-occ-alma-core-goals')
 })
