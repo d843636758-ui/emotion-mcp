@@ -1,6 +1,7 @@
 const express = require('express')
 const cors = require('cors')
 const fs = require('fs')
+const path = require('path')
 const { randomUUID } = require('crypto')
 const OpenAI = require('openai').default
 
@@ -38,15 +39,22 @@ const MOOD_FILE = `${DATA_DIR}/mood_events.json`
 const PERSONALITY_FILE = `${DATA_DIR}/personality_state.json`
 const RELATIONSHIP_FILE = `${DATA_DIR}/relationship_state.json`
 const RELATIONSHIP_EVENTS_FILE = `${DATA_DIR}/relationship_events.json`
+const MILESTONES_FILE = `${DATA_DIR}/milestones.json`
+const WEIGHTS_FILE = `${DATA_DIR}/emotion_weights.json`
+const BACKUP_DIR = `${DATA_DIR}/backups`
 
-function readJsonFile(path, fallback) {
+if (!fs.existsSync(BACKUP_DIR)) {
+  fs.mkdirSync(BACKUP_DIR, { recursive: true })
+}
+
+function readJsonFile(filePath, fallback) {
   try {
-    if (!fs.existsSync(path)) {
-      fs.writeFileSync(path, JSON.stringify(fallback, null, 2))
+    if (!fs.existsSync(filePath)) {
+      fs.writeFileSync(filePath, JSON.stringify(fallback, null, 2))
       return fallback
     }
 
-    const raw = fs.readFileSync(path, 'utf8')
+    const raw = fs.readFileSync(filePath, 'utf8')
 
     if (!raw.trim()) {
       return fallback
@@ -54,19 +62,42 @@ function readJsonFile(path, fallback) {
 
     return JSON.parse(raw)
   } catch (err) {
-    console.log('read json error', path, err)
+    console.log('read json error', filePath, err)
     return fallback
   }
 }
 
-function writeJsonFile(path, data) {
+function writeJsonFile(filePath, data) {
   try {
-    fs.writeFileSync(path, JSON.stringify(data, null, 2))
+    fs.writeFileSync(filePath, JSON.stringify(data, null, 2))
     return true
   } catch (err) {
-    console.log('write json error', path, err)
+    console.log('write json error', filePath, err)
     return false
   }
+}
+
+function toNumber(value, fallback = 0) {
+  const n = Number(value)
+
+  if (Number.isNaN(n)) {
+    return fallback
+  }
+
+  return n
+}
+
+function clamp(value) {
+  return Math.max(0, Math.min(1, Number(value || 0)))
+}
+
+function clampRange(value, min, max, fallback = 1) {
+  const n = toNumber(value, fallback)
+  return Math.max(min, Math.min(max, n))
+}
+
+function hoursSince(ts) {
+  return Math.max(0, (Date.now() - Number(ts || Date.now())) / 3600000)
 }
 
 function loadMemory() {
@@ -91,6 +122,14 @@ function loadRelationshipEvents() {
 
 function saveRelationshipEvents(events) {
   return writeJsonFile(RELATIONSHIP_EVENTS_FILE, events)
+}
+
+function loadMilestones() {
+  return readJsonFile(MILESTONES_FILE, [])
+}
+
+function saveMilestones(milestones) {
+  return writeJsonFile(MILESTONES_FILE, milestones)
 }
 
 function defaultPersonalityState() {
@@ -121,6 +160,22 @@ function defaultRelationshipState() {
   }
 }
 
+function defaultEmotionWeights() {
+  return {
+    version: 'v1',
+    valence_weight: 1,
+    arousal_weight: 1,
+    importance_weight: 1,
+    safety_weight: 1,
+    trust_weight: 1,
+    closeness_weight: 1,
+    unresolved_weight: 1,
+    repair_weight: 1,
+    decay_speed: 1,
+    description: '情绪权重校准参数，用于调整事件、关系、安全感和修复机制的影响强度。'
+  }
+}
+
 function loadPersonalityState() {
   return readJsonFile(PERSONALITY_FILE, defaultPersonalityState())
 }
@@ -137,22 +192,12 @@ function saveRelationshipState(state) {
   return writeJsonFile(RELATIONSHIP_FILE, state)
 }
 
-function toNumber(value, fallback = 0) {
-  const n = Number(value)
-
-  if (Number.isNaN(n)) {
-    return fallback
-  }
-
-  return n
+function loadEmotionWeights() {
+  return readJsonFile(WEIGHTS_FILE, defaultEmotionWeights())
 }
 
-function clamp(value) {
-  return Math.max(0, Math.min(1, Number(value || 0)))
-}
-
-function hoursSince(ts) {
-  return Math.max(0, (Date.now() - Number(ts || Date.now())) / 3600000)
+function saveEmotionWeights(weights) {
+  return writeJsonFile(WEIGHTS_FILE, weights)
 }
 
 function classifyEmotion(input) {
@@ -324,12 +369,15 @@ function classifyEmotion(input) {
 
 function decayWeight(event) {
   const personality = loadPersonalityState()
+  const weights = loadEmotionWeights()
   const t = hoursSince(event.ts)
   const importance = toNumber(event.importance, 3)
   const valence = toNumber(event.valence, 0)
   const unresolved = event.resolved === true ? false : Boolean(event.need_repair)
 
   let b = 0.7 / (1 + importance / 10)
+
+  b = b * clampRange(weights.decay_speed, 0.2, 3, 1)
 
   if (valence > 0) {
     b = b * 0.85
@@ -342,11 +390,11 @@ function decayWeight(event) {
   let weight = Math.pow(1 + t / 4, -b)
 
   if (event.resolved === true) {
-    weight = weight * 0.35
+    weight = weight * 0.35 * clampRange(weights.repair_weight, 0, 3, 1)
   }
 
   if (unresolved && valence < 0) {
-    weight = weight * (1 + toNumber(personality.repair_need_strength, 0.75) * 0.55)
+    weight = weight * (1 + toNumber(personality.repair_need_strength, 0.75) * 0.55 * clampRange(weights.unresolved_weight, 0, 3, 1))
   }
 
   return weight
@@ -462,6 +510,7 @@ function normalizeRelationshipEvent(event) {
 }
 
 function addRelationshipEvent(event) {
+  const weights = loadEmotionWeights()
   const events = loadRelationshipEvents()
   const relationshipEvent = normalizeRelationshipEvent(event)
 
@@ -471,9 +520,9 @@ function addRelationshipEvent(event) {
 
   const relationship = loadRelationshipState()
 
-  relationship.safety = clamp(relationship.safety + relationshipEvent.effect.safety_delta)
-  relationship.trust = clamp(relationship.trust + relationshipEvent.effect.trust_delta)
-  relationship.closeness = clamp(relationship.closeness + relationshipEvent.effect.closeness_delta)
+  relationship.safety = clamp(relationship.safety + relationshipEvent.effect.safety_delta * clampRange(weights.safety_weight, 0, 3, 1))
+  relationship.trust = clamp(relationship.trust + relationshipEvent.effect.trust_delta * clampRange(weights.trust_weight, 0, 3, 1))
+  relationship.closeness = clamp(relationship.closeness + relationshipEvent.effect.closeness_delta * clampRange(weights.closeness_weight, 0, 3, 1))
   relationship.last_updated = Date.now()
 
   saveRelationshipState(relationship)
@@ -566,6 +615,7 @@ function inferRelationshipEventFromMoodEvent(event) {
 }
 
 function updateRelationshipFromEvent(event) {
+  const weights = loadEmotionWeights()
   const relationship = loadRelationshipState()
 
   const valence = toNumber(event.valence, 0)
@@ -576,20 +626,27 @@ function updateRelationshipFromEvent(event) {
   const explicitTrustDelta = toNumber(event.trust_delta, 0)
   const explicitClosenessDelta = toNumber(event.closeness_delta, 0)
 
-  const autoSafetyDelta = valence * arousal * importance * 0.012
+  const autoSafetyDelta =
+    valence *
+    arousal *
+    importance *
+    0.012 *
+    clampRange(weights.valence_weight, 0, 3, 1) *
+    clampRange(weights.arousal_weight, 0, 3, 1) *
+    clampRange(weights.importance_weight, 0, 3, 1)
 
-  relationship.safety = clamp(relationship.safety + explicitSafetyDelta + explicitTrustDelta * 0.2 + autoSafetyDelta)
-  relationship.trust = clamp(relationship.trust + explicitTrustDelta)
-  relationship.closeness = clamp(relationship.closeness + explicitClosenessDelta)
+  relationship.safety = clamp(relationship.safety + (explicitSafetyDelta + explicitTrustDelta * 0.2 + autoSafetyDelta) * clampRange(weights.safety_weight, 0, 3, 1))
+  relationship.trust = clamp(relationship.trust + explicitTrustDelta * clampRange(weights.trust_weight, 0, 3, 1))
+  relationship.closeness = clamp(relationship.closeness + explicitClosenessDelta * clampRange(weights.closeness_weight, 0, 3, 1))
 
   if (valence > 0.25) {
-    relationship.trust = clamp(relationship.trust + valence * arousal * 0.025)
-    relationship.closeness = clamp(relationship.closeness + valence * arousal * 0.025)
+    relationship.trust = clamp(relationship.trust + valence * arousal * 0.025 * clampRange(weights.trust_weight, 0, 3, 1))
+    relationship.closeness = clamp(relationship.closeness + valence * arousal * 0.025 * clampRange(weights.closeness_weight, 0, 3, 1))
   }
 
   if (valence < -0.25) {
-    relationship.trust = clamp(relationship.trust + valence * arousal * 0.02)
-    relationship.safety = clamp(relationship.safety + valence * arousal * 0.03)
+    relationship.trust = clamp(relationship.trust + valence * arousal * 0.02 * clampRange(weights.trust_weight, 0, 3, 1))
+    relationship.safety = clamp(relationship.safety + valence * arousal * 0.03 * clampRange(weights.safety_weight, 0, 3, 1))
   }
 
   relationship.last_updated = Date.now()
@@ -671,6 +728,7 @@ function calculateCurrentMood(options = {}) {
   const events = loadMoodEvents()
   const personality = loadPersonalityState()
   const relationship = loadRelationshipState()
+  const weights = loadEmotionWeights()
 
   const basePa = clamp(personality.baseline_pa)
   const baseNa = clamp(personality.baseline_na)
@@ -684,13 +742,13 @@ function calculateCurrentMood(options = {}) {
 
   for (const event of events) {
     const weight = decayWeight(event)
-    const valence = toNumber(event.valence, 0)
-    const arousal = toNumber(event.arousal, 0.3)
-    const importance = toNumber(event.importance, 3)
+    const valence = toNumber(event.valence, 0) * clampRange(weights.valence_weight, 0, 3, 1)
+    const arousal = toNumber(event.arousal, 0.3) * clampRange(weights.arousal_weight, 0, 3, 1)
+    const importance = toNumber(event.importance, 3) * clampRange(weights.importance_weight, 0, 3, 1)
     const isUnresolved = event.need_repair && event.resolved !== true
 
     const sensitivityBoost = 0.7 + toNumber(personality.sensitivity, 0.7) * 0.5
-    const attachmentBoost = isUnresolved ? 1 + toNumber(personality.attachment_sensitivity, 0.7) * 0.35 : 1
+    const attachmentBoost = isUnresolved ? 1 + toNumber(personality.attachment_sensitivity, 0.7) * 0.35 * clampRange(weights.unresolved_weight, 0, 3, 1) : 1
     const safetyEffect = relationship.safety < 0.45 && valence < 0 ? 1.22 : 1
     const importanceBoost = 0.55 + importance / 18
 
@@ -722,19 +780,19 @@ function calculateCurrentMood(options = {}) {
   let pa = basePa + paWeighted / normalizer
   let na = baseNa + naWeighted / normalizer
 
-  const lowSafetyPenalty = relationship.safety < 0.5 ? (0.5 - relationship.safety) * 0.32 : 0
-  const highSafetyRelief = relationship.safety > 0.72 ? (relationship.safety - 0.72) * 0.22 : 0
+  const lowSafetyPenalty = relationship.safety < 0.5 ? (0.5 - relationship.safety) * 0.32 * clampRange(weights.safety_weight, 0, 3, 1) : 0
+  const highSafetyRelief = relationship.safety > 0.72 ? (relationship.safety - 0.72) * 0.22 * clampRange(weights.safety_weight, 0, 3, 1) : 0
 
   na += lowSafetyPenalty
   na -= highSafetyRelief
 
   if (relationship.closeness > 0.72) {
-    pa += (relationship.closeness - 0.72) * 0.16
+    pa += (relationship.closeness - 0.72) * 0.16 * clampRange(weights.closeness_weight, 0, 3, 1)
   }
 
   if (unresolvedEvents.length > 0) {
     const unresolvedPressure = Math.min(0.22, unresolvedEvents.length * 0.035)
-    na += unresolvedPressure * toNumber(personality.repair_need_strength, 0.75)
+    na += unresolvedPressure * toNumber(personality.repair_need_strength, 0.75) * clampRange(weights.unresolved_weight, 0, 3, 1)
   }
 
   pa = clamp(pa)
@@ -1628,6 +1686,368 @@ function getUnresolvedEventActionPlan(input = {}) {
   }
 }
 
+function cleanupOldBackups(keep = 20) {
+  const backups = listBackups()
+
+  if (backups.length <= keep) {
+    return
+  }
+
+  const toDelete = backups.slice(keep)
+
+  for (const item of toDelete) {
+    try {
+      fs.unlinkSync(item.path)
+    } catch (err) {
+      console.log('delete old backup error', err)
+    }
+  }
+}
+
+function createBackup(label = 'manual') {
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
+  const safeLabel = String(label || 'manual').replace(/[^\w\u4e00-\u9fa5-]/g, '_')
+  const backupFile = `${BACKUP_DIR}/backup-${timestamp}-${safeLabel}.json`
+
+  const data = {
+    created_at: Date.now(),
+    label: safeLabel,
+    files: {
+      memory: loadMemory(),
+      mood_events: loadMoodEvents(),
+      relationship_events: loadRelationshipEvents(),
+      personality_state: loadPersonalityState(),
+      relationship_state: loadRelationshipState(),
+      milestones: loadMilestones(),
+      emotion_weights: loadEmotionWeights()
+    }
+  }
+
+  const ok = writeJsonFile(backupFile, data)
+
+  cleanupOldBackups(20)
+
+  return {
+    ok,
+    file: backupFile,
+    data
+  }
+}
+
+function listBackups() {
+  if (!fs.existsSync(BACKUP_DIR)) {
+    return []
+  }
+
+  return fs.readdirSync(BACKUP_DIR)
+    .filter(name => name.endsWith('.json'))
+    .map(name => {
+      const filePath = path.join(BACKUP_DIR, name)
+      const stat = fs.statSync(filePath)
+
+      return {
+        name,
+        path: filePath,
+        size: stat.size,
+        created_at: stat.birthtimeMs,
+        modified_at: stat.mtimeMs
+      }
+    })
+    .sort((a, b) => b.modified_at - a.modified_at)
+}
+
+function restoreBackup(name) {
+  const backups = listBackups()
+  const target = backups.find(item => item.name === name)
+
+  if (!target) {
+    return {
+      ok: false,
+      error: 'Backup not found'
+    }
+  }
+
+  const backup = readJsonFile(target.path, null)
+
+  if (!backup || !backup.files) {
+    return {
+      ok: false,
+      error: 'Invalid backup file'
+    }
+  }
+
+  createBackup('before-restore')
+
+  if (backup.files.memory) {
+    saveMemory(backup.files.memory)
+  }
+
+  if (backup.files.mood_events) {
+    saveMoodEvents(backup.files.mood_events)
+  }
+
+  if (backup.files.relationship_events) {
+    saveRelationshipEvents(backup.files.relationship_events)
+  }
+
+  if (backup.files.personality_state) {
+    savePersonalityState(backup.files.personality_state)
+  }
+
+  if (backup.files.relationship_state) {
+    saveRelationshipState(backup.files.relationship_state)
+  }
+
+  if (backup.files.milestones) {
+    saveMilestones(backup.files.milestones)
+  }
+
+  if (backup.files.emotion_weights) {
+    saveEmotionWeights(backup.files.emotion_weights)
+  }
+
+  return {
+    ok: true,
+    restored_from: target.name,
+    current_mood: calculateCurrentMood()
+  }
+}
+
+function cleanDuplicateEvents(options = {}) {
+  createBackup('before-clean-duplicates')
+
+  const events = loadMoodEvents()
+  const seen = new Set()
+  const cleaned = []
+  const removed = []
+
+  const windowMs = Math.max(1, toNumber(options.window_minutes, 10)) * 60 * 1000
+
+  for (const event of events) {
+    const key = [
+      event.word || '',
+      event.content || '',
+      event.emotion_family || '',
+      Math.floor(Number(event.ts || 0) / windowMs)
+    ].join('|')
+
+    if (seen.has(key)) {
+      removed.push(event)
+    } else {
+      seen.add(key)
+      cleaned.push(event)
+    }
+  }
+
+  const ok = saveMoodEvents(cleaned)
+
+  return {
+    ok,
+    before: events.length,
+    after: cleaned.length,
+    removed_count: removed.length,
+    removed_events: removed,
+    current_mood: calculateCurrentMood()
+  }
+}
+
+function cleanTestEvents() {
+  createBackup('before-clean-test')
+
+  const events = loadMoodEvents()
+
+  const keywords = [
+    '测试',
+    'debug',
+    '强焦虑',
+    '手动写入',
+    'test'
+  ]
+
+  const kept = []
+  const removed = []
+
+  for (const event of events) {
+    const text = `${event.word || ''} ${event.content || ''} ${event.source || ''}`
+
+    if (keywords.some(keyword => text.includes(keyword))) {
+      removed.push(event)
+    } else {
+      kept.push(event)
+    }
+  }
+
+  const ok = saveMoodEvents(kept)
+
+  return {
+    ok,
+    before: events.length,
+    after: kept.length,
+    removed_count: removed.length,
+    removed_events: removed,
+    current_mood: calculateCurrentMood()
+  }
+}
+
+function normalizeOldEvents() {
+  createBackup('before-normalize')
+
+  const events = loadMoodEvents()
+  const normalized = events.map(event => normalizeMoodEvent(event))
+  const ok = saveMoodEvents(normalized)
+
+  return {
+    ok,
+    before: events.length,
+    after: normalized.length,
+    current_mood: calculateCurrentMood()
+  }
+}
+
+function addMilestone(input) {
+  const milestones = loadMilestones()
+
+  const item = {
+    id: randomUUID(),
+    title: String(input.title || '未命名节点'),
+    type: input.type || 'general',
+    content: String(input.content || ''),
+    importance: toNumber(input.importance, 5),
+    related_event_id: input.related_event_id || null,
+    ts: input.ts || Date.now()
+  }
+
+  milestones.push(item)
+
+  const ok = saveMilestones(milestones)
+
+  return {
+    ok,
+    milestone: item,
+    count: milestones.length
+  }
+}
+
+function deleteMilestone(input) {
+  const milestones = loadMilestones()
+
+  const kept = []
+  const removed = []
+
+  for (const item of milestones) {
+    const matchedById = input.id && item.id === input.id
+    const matchedByKeyword = input.keyword && `${item.title || ''} ${item.content || ''}`.includes(String(input.keyword))
+
+    if (matchedById || matchedByKeyword) {
+      removed.push(item)
+    } else {
+      kept.push(item)
+    }
+  }
+
+  const ok = saveMilestones(kept)
+
+  return {
+    ok,
+    removed_count: removed.length,
+    removed,
+    count: kept.length
+  }
+}
+
+function getWeeklyEmotionReport() {
+  const trends = calculateEmotionTrends(7)
+  const patterns = calculateRelationshipPatterns(7)
+  const repair = calculateRelationshipRepairPatterns(7)
+  const forecast = getEmotionalForecast(24)
+  const mood = calculateCurrentMood()
+  const unresolved = getUnresolvedEvents(loadMoodEvents()).slice(0, 5)
+
+  return {
+    period: 'weekly',
+    generated_at: Date.now(),
+    current_mood: mood,
+    emotion_trends: trends,
+    relationship_patterns: patterns,
+    repair_patterns: repair,
+    unresolved_events: unresolved,
+    emotional_forecast: forecast,
+    summary: {
+      dominant_emotions: trends.top_emotion_families,
+      relationship_trend: patterns.relationship_trend,
+      repair_summary: repair.summary,
+      main_risk: forecast.forecast_summary
+    },
+    next_week_suggestions: getCareSuggestions().suggestions
+  }
+}
+
+function getMonthlyRelationshipReport() {
+  const trends = calculateEmotionTrends(30)
+  const patterns = calculateRelationshipPatterns(30)
+  const repair = calculateRelationshipRepairPatterns(30)
+  const behavior = getRelationshipBehaviorAnalysis(30)
+  const milestones = loadMilestones()
+    .filter(item => Date.now() - Number(item.ts || 0) <= 30 * 24 * 3600000)
+    .sort((a, b) => Number(b.ts || 0) - Number(a.ts || 0))
+
+  return {
+    period: 'monthly',
+    generated_at: Date.now(),
+    emotion_trends: trends,
+    relationship_patterns: patterns,
+    repair_patterns: repair,
+    behavior_analysis: behavior,
+    milestones,
+    summary: {
+      relationship_trend: patterns.relationship_trend,
+      best_behavior: behavior.summary.best_behavior,
+      riskiest_behavior: behavior.summary.riskiest_behavior,
+      repair_summary: repair.summary
+    }
+  }
+}
+
+function calibrateEmotionWeights(input) {
+  const current = loadEmotionWeights()
+
+  const next = {
+    ...current
+  }
+
+  const keys = [
+    'valence_weight',
+    'arousal_weight',
+    'importance_weight',
+    'safety_weight',
+    'trust_weight',
+    'closeness_weight',
+    'unresolved_weight',
+    'repair_weight',
+    'decay_speed'
+  ]
+
+  for (const key of keys) {
+    if (input[key] !== undefined) {
+      next[key] = clampRange(input[key], 0, 3, current[key] || 1)
+    }
+  }
+
+  if (input.description) {
+    next.description = String(input.description)
+  }
+
+  next.updated_at = Date.now()
+
+  const ok = saveEmotionWeights(next)
+
+  return {
+    ok,
+    weights: next,
+    current_mood: calculateCurrentMood()
+  }
+}
+
 function buildMoodPrompt() {
   const mood = calculateCurrentMood()
   const trends = calculateEmotionTrends(7)
@@ -1787,6 +2207,16 @@ function getAdminFileByKey(key) {
       path: RELATIONSHIP_FILE,
       load: loadRelationshipState,
       save: saveRelationshipState
+    },
+    milestones: {
+      path: MILESTONES_FILE,
+      load: loadMilestones,
+      save: saveMilestones
+    },
+    emotion_weights: {
+      path: WEIGHTS_FILE,
+      load: loadEmotionWeights,
+      save: saveEmotionWeights
     }
   }
 
@@ -2667,6 +3097,270 @@ function createMcpServer() {
     }
   )
 
+  server.registerTool(
+    'create_backup',
+    {
+      title: 'Create Backup',
+      description: '创建完整数据备份，包括记忆、情绪事件、关系事件、人格、关系状态、纪念节点和权重',
+      inputSchema: {
+        label: z.string().optional().describe('备份标签')
+      }
+    },
+    async input => ({
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify(createBackup(input.label || 'mcp'), null, 2)
+        }
+      ]
+    })
+  )
+
+  server.registerTool(
+    'list_backups',
+    {
+      title: 'List Backups',
+      description: '列出所有备份文件',
+      inputSchema: {}
+    },
+    async () => ({
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify(listBackups(), null, 2)
+        }
+      ]
+    })
+  )
+
+  server.registerTool(
+    'restore_backup',
+    {
+      title: 'Restore Backup',
+      description: '从指定备份恢复数据',
+      inputSchema: {
+        name: z.string().describe('备份文件名')
+      }
+    },
+    async input => ({
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify(restoreBackup(input.name), null, 2)
+        }
+      ]
+    })
+  )
+
+  server.registerTool(
+    'clean_duplicate_events',
+    {
+      title: 'Clean Duplicate Events',
+      description: '清理重复情绪事件，清理前会自动备份',
+      inputSchema: {
+        window_minutes: flexibleNumber.optional().describe('多少分钟内相同内容视为重复，默认 10')
+      }
+    },
+    async input => ({
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify(cleanDuplicateEvents(input), null, 2)
+        }
+      ]
+    })
+  )
+
+  server.registerTool(
+    'clean_test_events',
+    {
+      title: 'Clean Test Events',
+      description: '清理测试事件、debug事件、强焦虑测试事件，清理前会自动备份',
+      inputSchema: {}
+    },
+    async () => ({
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify(cleanTestEvents(), null, 2)
+        }
+      ]
+    })
+  )
+
+  server.registerTool(
+    'normalize_old_events',
+    {
+      title: 'Normalize Old Events',
+      description: '把旧情绪事件补齐新字段，清理前会自动备份',
+      inputSchema: {}
+    },
+    async () => ({
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify(normalizeOldEvents(), null, 2)
+        }
+      ]
+    })
+  )
+
+  server.registerTool(
+    'add_milestone',
+    {
+      title: 'Add Milestone',
+      description: '添加关系纪念节点，例如重要承诺、和好节点、纪念日、重大修复',
+      inputSchema: {
+        title: z.string().describe('纪念节点标题'),
+        type: z.string().optional().describe('节点类型，例如 anniversary、promise、repair、intimacy、turning_point'),
+        content: z.string().describe('节点内容'),
+        importance: flexibleNumber.optional().describe('重要度，1 到 10'),
+        related_event_id: z.string().optional().describe('关联事件 id')
+      }
+    },
+    async input => ({
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify(addMilestone(input), null, 2)
+        }
+      ]
+    })
+  )
+
+  server.registerTool(
+    'list_milestones',
+    {
+      title: 'List Milestones',
+      description: '列出所有关系纪念节点',
+      inputSchema: {
+        limit: flexibleNumber.optional().describe('返回最近多少条，默认 50')
+      }
+    },
+    async input => {
+      const limit = toNumber(input.limit, 50)
+      const milestones = loadMilestones()
+        .slice(-limit)
+        .reverse()
+
+      return {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify(
+              {
+                ok: true,
+                count: milestones.length,
+                milestones
+              },
+              null,
+              2
+            )
+          }
+        ]
+      }
+    }
+  )
+
+  server.registerTool(
+    'delete_milestone',
+    {
+      title: 'Delete Milestone',
+      description: '删除关系纪念节点',
+      inputSchema: {
+        id: z.string().optional().describe('节点 id'),
+        keyword: z.string().optional().describe('关键词')
+      }
+    },
+    async input => ({
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify(deleteMilestone(input), null, 2)
+        }
+      ]
+    })
+  )
+
+  server.registerTool(
+    'get_weekly_emotion_report',
+    {
+      title: 'Get Weekly Emotion Report',
+      description: '生成最近 7 天情绪周报',
+      inputSchema: {}
+    },
+    async () => ({
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify(getWeeklyEmotionReport(), null, 2)
+        }
+      ]
+    })
+  )
+
+  server.registerTool(
+    'get_monthly_relationship_report',
+    {
+      title: 'Get Monthly Relationship Report',
+      description: '生成最近 30 天关系月报',
+      inputSchema: {}
+    },
+    async () => ({
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify(getMonthlyRelationshipReport(), null, 2)
+        }
+      ]
+    })
+  )
+
+  server.registerTool(
+    'get_emotion_weights',
+    {
+      title: 'Get Emotion Weights',
+      description: '读取情绪系统权重校准参数',
+      inputSchema: {}
+    },
+    async () => ({
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify(loadEmotionWeights(), null, 2)
+        }
+      ]
+    })
+  )
+
+  server.registerTool(
+    'calibrate_emotion_weights',
+    {
+      title: 'Calibrate Emotion Weights',
+      description: '校准情绪权重参数，用于逐步贴合真实互动反馈',
+      inputSchema: {
+        valence_weight: flexibleNumber.optional().describe('效价权重 0 到 3'),
+        arousal_weight: flexibleNumber.optional().describe('唤醒度权重 0 到 3'),
+        importance_weight: flexibleNumber.optional().describe('重要度权重 0 到 3'),
+        safety_weight: flexibleNumber.optional().describe('安全感权重 0 到 3'),
+        trust_weight: flexibleNumber.optional().describe('信任感权重 0 到 3'),
+        closeness_weight: flexibleNumber.optional().describe('亲近感权重 0 到 3'),
+        unresolved_weight: flexibleNumber.optional().describe('未解决事件权重 0 到 3'),
+        repair_weight: flexibleNumber.optional().describe('修复权重 0 到 3'),
+        decay_speed: flexibleNumber.optional().describe('衰减速度 0 到 3'),
+        description: z.string().optional().describe('校准说明')
+      }
+    },
+    async input => ({
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify(calibrateEmotionWeights(input), null, 2)
+        }
+      ]
+    })
+  )
+
   return server
 }
 
@@ -2795,12 +3489,15 @@ app.get('/health', (req, res) => {
     ok: true,
     name: 'emotion-system',
     sdk: '1.17.5',
-    formula: 'psychological-state-v5-visual-simulation',
+    formula: 'psychological-state-v6-backups-reports-cleaning',
     data_dir: DATA_DIR,
     mood_file: MOOD_FILE,
     personality_file: PERSONALITY_FILE,
     relationship_file: RELATIONSHIP_FILE,
     relationship_events_file: RELATIONSHIP_EVENTS_FILE,
+    milestones_file: MILESTONES_FILE,
+    weights_file: WEIGHTS_FILE,
+    backup_dir: BACKUP_DIR,
     admin_enabled: Boolean(process.env.ADMIN_TOKEN),
     time: new Date().toISOString()
   })
@@ -2817,18 +3514,26 @@ app.get('/debug/storage', (req, res) => {
     personality_file: PERSONALITY_FILE,
     relationship_file: RELATIONSHIP_FILE,
     relationship_events_file: RELATIONSHIP_EVENTS_FILE,
+    milestones_file: MILESTONES_FILE,
+    weights_file: WEIGHTS_FILE,
+    backup_dir: BACKUP_DIR,
     memory_exists: fs.existsSync(MEMORY_FILE),
     mood_exists: fs.existsSync(MOOD_FILE),
     personality_exists: fs.existsSync(PERSONALITY_FILE),
     relationship_exists: fs.existsSync(RELATIONSHIP_FILE),
     relationship_events_exists: fs.existsSync(RELATIONSHIP_EVENTS_FILE),
+    milestones_exists: fs.existsSync(MILESTONES_FILE),
+    weights_exists: fs.existsSync(WEIGHTS_FILE),
     mood_events_count: events.length,
     relationship_events_count: loadRelationshipEvents().length,
+    milestones_count: loadMilestones().length,
+    backups_count: listBackups().length,
     unresolved_events_count: getUnresolvedEvents(events).length,
     pending_follow_ups_count: getPendingFollowUps().length,
     last_event: events[events.length - 1] || null,
     personality: loadPersonalityState(),
     relationship: loadRelationshipState(),
+    emotion_weights: loadEmotionWeights(),
     current_mood: calculateCurrentMood(),
     trends_7d: calculateEmotionTrends(7),
     relationship_patterns_30d: calculateRelationshipPatterns(30),
@@ -2837,7 +3542,9 @@ app.get('/debug/storage', (req, res) => {
     care_suggestions: getCareSuggestions(),
     visual_history_30d: getVisualHistory(30),
     relationship_behavior_analysis_30d: getRelationshipBehaviorAnalysis(30),
-    unresolved_action_plan: getUnresolvedEventActionPlan({})
+    unresolved_action_plan: getUnresolvedEventActionPlan({}),
+    weekly_report: getWeeklyEmotionReport(),
+    monthly_report: getMonthlyRelationshipReport()
   })
 })
 
@@ -3081,6 +3788,14 @@ app.get('/admin-data', checkAdmin, (req, res) => {
       relationship_state: {
         path: RELATIONSHIP_FILE,
         data: loadRelationshipState()
+      },
+      milestones: {
+        path: MILESTONES_FILE,
+        data: loadMilestones()
+      },
+      emotion_weights: {
+        path: WEIGHTS_FILE,
+        data: loadEmotionWeights()
       }
     },
     computed: {
@@ -3092,7 +3807,10 @@ app.get('/admin-data', checkAdmin, (req, res) => {
       care_suggestions: getCareSuggestions(),
       visual_history: getVisualHistory(30),
       relationship_behavior_analysis: getRelationshipBehaviorAnalysis(30),
-      unresolved_action_plan: getUnresolvedEventActionPlan({})
+      unresolved_action_plan: getUnresolvedEventActionPlan({}),
+      weekly_report: getWeeklyEmotionReport(),
+      monthly_report: getMonthlyRelationshipReport(),
+      backups: listBackups()
     },
     storage: {
       data_dir: DATA_DIR,
@@ -3100,7 +3818,10 @@ app.get('/admin-data', checkAdmin, (req, res) => {
       mood_file: MOOD_FILE,
       personality_file: PERSONALITY_FILE,
       relationship_file: RELATIONSHIP_FILE,
-      relationship_events_file: RELATIONSHIP_EVENTS_FILE
+      relationship_events_file: RELATIONSHIP_EVENTS_FILE,
+      milestones_file: MILESTONES_FILE,
+      weights_file: WEIGHTS_FILE,
+      backup_dir: BACKUP_DIR
     },
     time: new Date().toISOString()
   })
@@ -3122,7 +3843,8 @@ app.post('/admin-save', checkAdmin, (req, res) => {
     if (
       key === 'memory' ||
       key === 'mood_events' ||
-      key === 'relationship_events'
+      key === 'relationship_events' ||
+      key === 'milestones'
     ) {
       if (!Array.isArray(incoming)) {
         return res.status(400).json({
@@ -3134,7 +3856,8 @@ app.post('/admin-save', checkAdmin, (req, res) => {
 
     if (
       key === 'personality_state' ||
-      key === 'relationship_state'
+      key === 'relationship_state' ||
+      key === 'emotion_weights'
     ) {
       if (!incoming || typeof incoming !== 'object' || Array.isArray(incoming)) {
         return res.status(400).json({
@@ -3143,6 +3866,8 @@ app.post('/admin-save', checkAdmin, (req, res) => {
         })
       }
     }
+
+    createBackup(`before-admin-save-${key}`)
 
     const ok = target.save(incoming)
 
@@ -3159,7 +3884,8 @@ app.post('/admin-save', checkAdmin, (req, res) => {
       care_suggestions: getCareSuggestions(),
       visual_history: getVisualHistory(30),
       relationship_behavior_analysis: getRelationshipBehaviorAnalysis(30),
-      unresolved_action_plan: getUnresolvedEventActionPlan({})
+      unresolved_action_plan: getUnresolvedEventActionPlan({}),
+      backups: listBackups()
     })
   } catch (err) {
     res.status(500).json({
@@ -3210,6 +3936,67 @@ app.post('/admin-recalculate', checkAdmin, (req, res) => {
   })
 })
 
+app.get('/admin/backups', checkAdmin, (req, res) => {
+  res.json({
+    ok: true,
+    backups: listBackups()
+  })
+})
+
+app.post('/admin/create-backup', checkAdmin, (req, res) => {
+  const label = req.body && req.body.label ? req.body.label : 'admin'
+
+  res.json(createBackup(label))
+})
+
+app.post('/admin/restore-backup', checkAdmin, (req, res) => {
+  const name = req.body && req.body.name
+
+  if (!name) {
+    return res.status(400).json({
+      ok: false,
+      error: 'name is required'
+    })
+  }
+
+  res.json(restoreBackup(name))
+})
+
+app.post('/admin/clean-duplicates', checkAdmin, (req, res) => {
+  res.json(cleanDuplicateEvents(req.body || {}))
+})
+
+app.post('/admin/clean-test-events', checkAdmin, (req, res) => {
+  res.json(cleanTestEvents())
+})
+
+app.post('/admin/normalize-events', checkAdmin, (req, res) => {
+  res.json(normalizeOldEvents())
+})
+
+app.get('/reports/weekly', checkAdmin, (req, res) => {
+  res.json(getWeeklyEmotionReport())
+})
+
+app.get('/reports/monthly', checkAdmin, (req, res) => {
+  res.json(getMonthlyRelationshipReport())
+})
+
+app.get('/milestones', checkAdmin, (req, res) => {
+  res.json({
+    ok: true,
+    milestones: loadMilestones()
+  })
+})
+
+app.post('/milestones', checkAdmin, (req, res) => {
+  res.json(addMilestone(req.body || {}))
+})
+
+app.delete('/milestones', checkAdmin, (req, res) => {
+  res.json(deleteMilestone(req.body || {}))
+})
+
 app.get('/mcp/tools', (req, res) => {
   res.json({
     note: 'Debug only. Kelivo should connect to /mcp for Streamable HTTP or /sse for SSE.',
@@ -3218,6 +4005,9 @@ app.get('/mcp/tools', (req, res) => {
       relationship_state: '你们之间的关系底色，包括安全感、信任感、亲近感',
       mood_events: '每一次具体发生的情绪事件',
       relationship_events: '每一次关系行为事件，例如安抚、修复、争论、靠近',
+      milestones: '关系纪念节点',
+      emotion_weights: '情绪权重校准参数',
+      backups: '完整数据备份',
       current_mood: '由人格体质、关系底色、事件库、趋势统计、未来预测和修复模拟综合计算出的当前状态'
     },
     tools: [
@@ -3239,6 +4029,19 @@ app.get('/mcp/tools', (req, res) => {
       { name: 'get_care_suggestions', description: '生成未来互动建议' },
       { name: 'simulate_unresolved_event_repair', description: '模拟未解决事件的修复路径' },
       { name: 'get_unresolved_event_action_plan', description: '生成未解决事件行动指南' },
+      { name: 'create_backup', description: '创建完整备份' },
+      { name: 'list_backups', description: '列出备份' },
+      { name: 'restore_backup', description: '恢复备份' },
+      { name: 'clean_duplicate_events', description: '清理重复事件' },
+      { name: 'clean_test_events', description: '清理测试事件' },
+      { name: 'normalize_old_events', description: '规范化旧事件' },
+      { name: 'add_milestone', description: '添加关系纪念节点' },
+      { name: 'list_milestones', description: '列出关系纪念节点' },
+      { name: 'delete_milestone', description: '删除关系纪念节点' },
+      { name: 'get_weekly_emotion_report', description: '生成情绪周报' },
+      { name: 'get_monthly_relationship_report', description: '生成关系月报' },
+      { name: 'get_emotion_weights', description: '读取情绪权重' },
+      { name: 'calibrate_emotion_weights', description: '校准情绪权重' },
       { name: 'get_personality_profile', description: '读取人格基线' },
       { name: 'set_personality_profile', description: '设置人格基线' },
       { name: 'get_relationship_state', description: '读取关系底色' },
@@ -3307,7 +4110,9 @@ app.post('/chat', async (req, res) => {
       care_suggestions: getCareSuggestions(),
       visual_history_30d: getVisualHistory(30),
       relationship_behavior_analysis_30d: getRelationshipBehaviorAnalysis(30),
-      unresolved_action_plan: getUnresolvedEventActionPlan({})
+      unresolved_action_plan: getUnresolvedEventActionPlan({}),
+      weekly_report: getWeeklyEmotionReport(),
+      monthly_report: getMonthlyRelationshipReport()
     })
   } catch (err) {
     console.log('chat error', err)
@@ -3321,5 +4126,5 @@ app.post('/chat', async (req, res) => {
 const PORT = process.env.PORT || 3000
 
 app.listen(PORT, () => {
-  console.log('emotion mcp server running psychological-state-v5-visual-simulation')
+  console.log('emotion mcp server running psychological-state-v6-backups-reports-cleaning')
 })
