@@ -1,164 +1,827 @@
 <!DOCTYPE html>
-<html lang="zh">
-
+<html lang="zh-CN">
 <head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Emotion MCP Admin v12</title>
+  <style>
+    :root {
+      --bg: #0f1020;
+      --panel: #181a2f;
+      --panel2: #20233d;
+      --text: #f4f4f8;
+      --muted: #a5a7bd;
+      --line: #313654;
+      --accent: #8b5cf6;
+      --accent2: #22c55e;
+      --danger: #ef4444;
+      --warn: #f59e0b;
+      --code: #111827;
+      --input: #0b0d18;
+    }
 
-<meta charset="UTF-8" />
+    * {
+      box-sizing: border-box;
+    }
 
-<title>Emotion MCP</title>
+    body {
+      margin: 0;
+      background: radial-gradient(circle at top left, #25224a 0, #0f1020 42%);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    }
 
-<style>
+    header {
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      background: rgba(15, 16, 32, 0.88);
+      backdrop-filter: blur(14px);
+      border-bottom: 1px solid var(--line);
+      padding: 16px 22px;
+    }
 
-body{
-background:#0f0f0f;
-color:white;
-font-family:sans-serif;
-max-width:700px;
-margin:auto;
-padding:40px;
-}
+    h1 {
+      margin: 0;
+      font-size: 22px;
+      letter-spacing: 0.4px;
+    }
 
-input{
-width:100%;
-padding:16px;
-border:none;
-border-radius:12px;
-margin-top:20px;
-}
+    .subtitle {
+      margin-top: 6px;
+      color: var(--muted);
+      font-size: 13px;
+    }
 
-button{
-margin-top:20px;
-padding:12px 20px;
-border:none;
-border-radius:12px;
-background:#6d28d9;
-color:white;
-cursor:pointer;
-}
+    main {
+      padding: 22px;
+      max-width: 1480px;
+      margin: 0 auto;
+    }
 
-.card{
-background:#1a1a1a;
-padding:20px;
-border-radius:20px;
-margin-top:20px;
-}
+    .toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+      margin-top: 14px;
+    }
 
-#chat{
-margin-top:20px;
-line-height:1.7;
-white-space:pre-wrap;
-}
+    input, select, textarea, button {
+      font-family: inherit;
+    }
 
-</style>
+    input, select {
+      background: var(--input);
+      color: var(--text);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 10px 12px;
+      outline: none;
+    }
 
+    input:focus, select:focus, textarea:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 2px rgba(139, 92, 246, 0.18);
+    }
+
+    button {
+      border: 0;
+      border-radius: 10px;
+      padding: 10px 14px;
+      cursor: pointer;
+      color: white;
+      background: var(--accent);
+      font-weight: 650;
+    }
+
+    button.secondary {
+      background: #374151;
+    }
+
+    button.success {
+      background: var(--accent2);
+    }
+
+    button.danger {
+      background: var(--danger);
+    }
+
+    button.warn {
+      background: var(--warn);
+      color: #111827;
+    }
+
+    button:disabled {
+      opacity: 0.48;
+      cursor: not-allowed;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(12, 1fr);
+      gap: 16px;
+      margin-top: 18px;
+    }
+
+    .card {
+      background: rgba(24, 26, 47, 0.92);
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      padding: 16px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.18);
+    }
+
+    .span-12 { grid-column: span 12; }
+    .span-8 { grid-column: span 8; }
+    .span-6 { grid-column: span 6; }
+    .span-4 { grid-column: span 4; }
+    .span-3 { grid-column: span 3; }
+
+    @media (max-width: 980px) {
+      .span-8, .span-6, .span-4, .span-3 {
+        grid-column: span 12;
+      }
+    }
+
+    .card h2 {
+      font-size: 16px;
+      margin: 0 0 12px;
+    }
+
+    .metric {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 9px 0;
+      border-bottom: 1px dashed rgba(255,255,255,0.09);
+    }
+
+    .metric:last-child {
+      border-bottom: 0;
+    }
+
+    .metric .name {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .metric .value {
+      font-size: 14px;
+      font-weight: 750;
+      text-align: right;
+      word-break: break-word;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      border: 1px solid var(--line);
+      background: rgba(255,255,255,0.05);
+      color: var(--text);
+      border-radius: 999px;
+      padding: 6px 10px;
+      font-size: 12px;
+      margin: 3px;
+    }
+
+    .tabs {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+
+    .tab {
+      background: #2b2f50;
+      border: 1px solid var(--line);
+      color: var(--muted);
+    }
+
+    .tab.active {
+      background: var(--accent);
+      color: white;
+      border-color: transparent;
+    }
+
+    textarea {
+      width: 100%;
+      min-height: 560px;
+      resize: vertical;
+      background: var(--code);
+      color: #e5e7eb;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 14px;
+      font-size: 13px;
+      line-height: 1.55;
+      outline: none;
+      white-space: pre;
+      tab-size: 2;
+    }
+
+    pre {
+      margin: 0;
+      white-space: pre-wrap;
+      word-break: break-word;
+      background: var(--code);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 12px;
+      color: #e5e7eb;
+      max-height: 520px;
+      overflow: auto;
+      font-size: 12px;
+      line-height: 1.55;
+    }
+
+    .row {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    .space {
+      justify-content: space-between;
+    }
+
+    .small {
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .status {
+      margin-top: 10px;
+      font-size: 13px;
+      color: var(--muted);
+    }
+
+    .ok {
+      color: #86efac;
+    }
+
+    .bad {
+      color: #fca5a5;
+    }
+
+    .chart {
+      display: grid;
+      gap: 8px;
+      margin-top: 12px;
+    }
+
+    .bar-row {
+      display: grid;
+      grid-template-columns: 92px 1fr 52px;
+      gap: 8px;
+      align-items: center;
+      font-size: 12px;
+    }
+
+    .bar-bg {
+      height: 10px;
+      background: rgba(255,255,255,0.08);
+      border-radius: 999px;
+      overflow: hidden;
+    }
+
+    .bar {
+      height: 100%;
+      border-radius: 999px;
+      background: linear-gradient(90deg, #8b5cf6, #22c55e);
+      width: 0%;
+    }
+
+    .danger-text {
+      color: #fca5a5;
+    }
+
+    .muted {
+      color: var(--muted);
+    }
+
+    .copy {
+      background: #334155;
+    }
+
+    .section-title {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 10px;
+    }
+
+    .section-title h2 {
+      margin: 0;
+    }
+
+    .json-actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin: 12px 0;
+    }
+
+    .file-info {
+      color: var(--muted);
+      font-size: 12px;
+      margin-bottom: 8px;
+      word-break: break-word;
+    }
+
+    .toast {
+      position: fixed;
+      right: 18px;
+      bottom: 18px;
+      padding: 12px 14px;
+      border-radius: 12px;
+      background: #111827;
+      border: 1px solid var(--line);
+      color: var(--text);
+      box-shadow: 0 10px 28px rgba(0,0,0,0.28);
+      display: none;
+      z-index: 20;
+      max-width: 520px;
+      font-size: 13px;
+    }
+  </style>
 </head>
-
 <body>
+  <header>
+    <h1>Emotion MCP Admin v12</h1>
+    <div class="subtitle">情绪事件 · 关系状态 · 核心目标 · 记忆激活 · 互动策略 · 趋势预测 · 可编辑数据面板</div>
+    <div class="toolbar">
+      <input id="tokenInput" type="password" placeholder="ADMIN_TOKEN" style="min-width:260px" />
+      <button onclick="saveToken()">保存 Token</button>
+      <button class="success" onclick="loadAll()">刷新数据</button>
+      <button class="secondary" onclick="openHealth()">打开 Health</button>
+      <button class="secondary" onclick="openDebug()">打开 Debug</button>
+      <button class="warn" onclick="createBackup()">创建备份</button>
+      <button class="danger" onclick="cleanTestEvents()">清理测试事件</button>
+      <button class="secondary" onclick="normalizeEvents()">标准化旧事件</button>
+    </div>
+    <div id="topStatus" class="status">等待加载。</div>
+  </header>
 
-<h1>Emotion MCP System</h1>
+  <main>
+    <div class="grid">
+      <section class="card span-3">
+        <h2>当前状态</h2>
+        <div id="moodMetrics"></div>
+      </section>
 
-<div class="card">
+      <section class="card span-3">
+        <h2>存储状态</h2>
+        <div id="storageMetrics"></div>
+      </section>
 
-<div id="mood">
-loading...
-</div>
+      <section class="card span-3">
+        <h2>v12 新层</h2>
+        <div id="v12Metrics"></div>
+      </section>
 
-</div>
+      <section class="card span-3">
+        <h2>预测与策略</h2>
+        <div id="strategyMetrics"></div>
+      </section>
 
-<input
-id="message"
-placeholder="输入消息"
-/>
+      <section class="card span-6">
+        <div class="section-title">
+          <h2>PA / NA 趋势</h2>
+          <span class="small">来自 visual_history</span>
+        </div>
+        <div id="paNaChart" class="chart"></div>
+      </section>
 
-<button onclick="sendMessage()">
-发送
-</button>
+      <section class="card span-6">
+        <div class="section-title">
+          <h2>目标与记忆激活曲线</h2>
+          <span class="small">goal_relevance / memory_activation</span>
+        </div>
+        <div id="activationChart" class="chart"></div>
+      </section>
 
-<div id="chat"></div>
+      <section class="card span-12">
+        <div class="section-title">
+          <h2>数据文件编辑器</h2>
+          <span class="small">保存前会自动备份</span>
+        </div>
 
-<script>
+        <div class="tabs" id="tabs"></div>
 
-async function refreshMood(){
+        <div class="file-info" id="fileInfo"></div>
 
-const res =
-await fetch('/mood')
+        <div class="json-actions">
+          <button class="success" onclick="saveCurrentFile()">保存当前文件</button>
+          <button class="secondary" onclick="formatJson()">格式化 JSON</button>
+          <button class="secondary" onclick="copyJson()">复制当前 JSON</button>
+          <button class="warn" onclick="reloadCurrentFile()">放弃修改并重载</button>
+        </div>
 
-const data =
-await res.json()
+        <textarea id="jsonEditor" spellcheck="false"></textarea>
+        <div id="editorStatus" class="status"></div>
+      </section>
 
-document.getElementById('mood')
-.innerHTML =
+      <section class="card span-6">
+        <h2>当前互动策略</h2>
+        <pre id="strategyPreview">暂无</pre>
+      </section>
 
-`
-<h3>当前情绪</h3>
+      <section class="card span-6">
+        <h2>未解决事件行动方案</h2>
+        <pre id="actionPlanPreview">暂无</pre>
+      </section>
 
-PA:
-${data.pa.toFixed(2)}
+      <section class="card span-6">
+        <h2>周报</h2>
+        <pre id="weeklyPreview">暂无</pre>
+      </section>
 
-<br><br>
+      <section class="card span-6">
+        <h2>月报</h2>
+        <pre id="monthlyPreview">暂无</pre>
+      </section>
 
-NA:
-${data.na.toFixed(2)}
+      <section class="card span-12">
+        <h2>原始 admin-data</h2>
+        <pre id="rawPreview">暂无</pre>
+      </section>
+    </div>
+  </main>
 
-<br><br>
+  <div id="toast" class="toast"></div>
 
-心情:
-${data.mood}
-`
+  <script>
+    const fileOrder = [
+      'personality_state',
+      'relationship_state',
+      'mood_events',
+      'relationship_events',
+      'memory',
+      'memory_index',
+      'strategy_profile',
+      'core_goals',
+      'emotion_lexicon',
+      'funnel_config',
+      'emotion_weights',
+      'decorative_moods',
+      'milestones'
+    ]
 
-}
+    let adminData = null
+    let currentKey = 'personality_state'
 
-refreshMood()
+    function getToken() {
+      return localStorage.getItem('emotion_admin_token') || ''
+    }
 
-async function sendMessage(){
+    function setStatus(text, isBad = false) {
+      const el = document.getElementById('topStatus')
+      el.textContent = text
+      el.className = isBad ? 'status bad' : 'status ok'
+    }
 
-const input =
-document.getElementById('message')
+    function setEditorStatus(text, isBad = false) {
+      const el = document.getElementById('editorStatus')
+      el.textContent = text
+      el.className = isBad ? 'status bad' : 'status ok'
+    }
 
-const message =
-input.value
+    function toast(text) {
+      const el = document.getElementById('toast')
+      el.textContent = text
+      el.style.display = 'block'
+      setTimeout(() => {
+        el.style.display = 'none'
+      }, 3200)
+    }
 
-const res =
-await fetch('/chat',{
+    function saveToken() {
+      const token = document.getElementById('tokenInput').value.trim()
+      localStorage.setItem('emotion_admin_token', token)
+      toast('Token 已保存')
+      loadAll()
+    }
 
-method:'POST',
+    function headers() {
+      return {
+        'Content-Type': 'application/json',
+        'x-admin-token': getToken()
+      }
+    }
 
-headers:{
-'Content-Type':'application/json'
-},
+    async function apiGet(url) {
+      const res = await fetch(url, {
+        headers: {
+          'x-admin-token': getToken()
+        }
+      })
 
-body:JSON.stringify({
-message
-})
+      if (!res.ok) {
+        const text = await res.text()
+        throw new Error(text)
+      }
 
-})
+      return res.json()
+    }
 
-const data =
-await res.json()
+    async function apiPost(url, body) {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: headers(),
+        body: JSON.stringify(body || {})
+      })
 
-document.getElementById('chat')
-.innerHTML +=
+      if (!res.ok) {
+        const text = await res.text()
+        throw new Error(text)
+      }
 
-`
-<hr>
+      return res.json()
+    }
 
-你：
-${message}
+    async function loadAll() {
+      try {
+        document.getElementById('tokenInput').value = getToken()
+        setStatus('正在加载 admin-data...')
+        adminData = await apiGet('/admin-data?days=30')
+        setStatus('加载成功。')
+        renderAll()
+      } catch (err) {
+        setStatus('加载失败：' + err.message, true)
+      }
+    }
 
-<br><br>
+    function renderAll() {
+      if (!adminData) return
+      renderMetrics()
+      renderTabs()
+      renderEditor()
+      renderCharts()
+      renderPreviews()
+      document.getElementById('rawPreview').textContent = JSON.stringify(adminData, null, 2)
+    }
 
-AI：
-${data.reply}
-`
+    function metric(name, value) {
+      return `
+        <div class="metric">
+          <div class="name">${escapeHtml(name)}</div>
+          <div class="value">${escapeHtml(String(value ?? ''))}</div>
+        </div>
+      `
+    }
 
-input.value=''
+    function renderMetrics() {
+      const mood = adminData.computed.current_mood || {}
+      const storage = adminData.storage || {}
+      const computed = adminData.computed || {}
 
-refreshMood()
+      document.getElementById('moodMetrics').innerHTML = [
+        metric('心情', mood.mood),
+        metric('PA', mood.pa),
+        metric('NA', mood.na),
+        metric('安全感', mood.relationship_safety),
+        metric('信任感', mood.relationship_trust),
+        metric('亲近感', mood.relationship_closeness),
+        metric('未解决事件', mood.unresolved_events_count),
+        metric('事件总数', mood.events_count)
+      ].join('')
 
-}
+      document.getElementById('storageMetrics').innerHTML = [
+        metric('DATA_DIR', storage.data_dir),
+        metric('mood 文件', shortPath(storage.mood_file)),
+        metric('personality 文件', shortPath(storage.personality_file)),
+        metric('relationship 文件', shortPath(storage.relationship_file)),
+        metric('backup 目录', shortPath(storage.backup_dir)),
+        metric('备份数量', computed.backups ? computed.backups.length : 0)
+      ].join('')
 
-</script>
+      document.getElementById('v12Metrics').innerHTML = [
+        metric('核心目标数', computed.core_goals_count),
+        metric('记忆索引数', computed.memory_index_count),
+        metric('策略数', computed.strategy_count),
+        metric('主导目标', listText(computed.emotion_trends && computed.emotion_trends.top_goal_matches)),
+        metric('主导记忆', listText(computed.emotion_trends && computed.emotion_trends.top_memory_matches))
+      ].join('')
 
+      const forecast = computed.emotional_forecast || {}
+      const strategy = mood.interaction_strategy || {}
+
+      document.getElementById('strategyMetrics').innerHTML = [
+        metric('风险等级', forecast.risk_level),
+        metric('可能心情', forecast.likely_mood),
+        metric('策略', strategy.strategy_name || strategy.strategy_id),
+        metric('修复优先级', strategy.repair_priority),
+        metric('语气', strategy.tone_hint)
+      ].join('')
+    }
+
+    function renderTabs() {
+      const tabs = document.getElementById('tabs')
+      tabs.innerHTML = ''
+
+      fileOrder.forEach(key => {
+        if (!adminData.files || !adminData.files[key]) return
+
+        const button = document.createElement('button')
+        button.className = key === currentKey ? 'tab active' : 'tab'
+        button.textContent = key
+        button.onclick = () => {
+          currentKey = key
+          renderTabs()
+          renderEditor()
+        }
+        tabs.appendChild(button)
+      })
+    }
+
+    function renderEditor() {
+      if (!adminData.files || !adminData.files[currentKey]) return
+
+      const file = adminData.files[currentKey]
+      document.getElementById('fileInfo').textContent = `${currentKey} ｜ ${file.path || ''}`
+      document.getElementById('jsonEditor').value = JSON.stringify(file.data, null, 2)
+      setEditorStatus('当前文件已载入：' + currentKey)
+    }
+
+    function reloadCurrentFile() {
+      renderEditor()
+      toast('已重载当前文件')
+    }
+
+    function formatJson() {
+      try {
+        const editor = document.getElementById('jsonEditor')
+        const parsed = JSON.parse(editor.value)
+        editor.value = JSON.stringify(parsed, null, 2)
+        setEditorStatus('JSON 格式正确。')
+      } catch (err) {
+        setEditorStatus('JSON 格式错误：' + err.message, true)
+      }
+    }
+
+    async function copyJson() {
+      const text = document.getElementById('jsonEditor').value
+      await navigator.clipboard.writeText(text)
+      toast('已复制当前 JSON')
+    }
+
+    async function saveCurrentFile() {
+      try {
+        const raw = document.getElementById('jsonEditor').value
+        const parsed = JSON.parse(raw)
+
+        setEditorStatus('正在保存 ' + currentKey + ' ...')
+
+        const result = await apiPost('/admin-save', {
+          key: currentKey,
+          data: parsed
+        })
+
+        if (!result.ok) {
+          throw new Error(JSON.stringify(result))
+        }
+
+        toast('保存成功：' + currentKey)
+        setEditorStatus('保存成功。已自动备份。')
+        await loadAll()
+      } catch (err) {
+        setEditorStatus('保存失败：' + err.message, true)
+      }
+    }
+
+    function renderPreviews() {
+      const computed = adminData.computed || {}
+      const mood = computed.current_mood || {}
+
+      document.getElementById('strategyPreview').textContent = JSON.stringify(mood.interaction_strategy || {}, null, 2)
+      document.getElementById('actionPlanPreview').textContent = JSON.stringify(computed.unresolved_action_plan || {}, null, 2)
+      document.getElementById('weeklyPreview').textContent = JSON.stringify(computed.weekly_report || {}, null, 2)
+      document.getElementById('monthlyPreview').textContent = JSON.stringify(computed.monthly_report || {}, null, 2)
+    }
+
+    function renderCharts() {
+      const visual = adminData.computed.visual_history || {}
+      const daily = visual.daily || []
+
+      renderBarChart('paNaChart', daily.slice(-14).map(item => ({
+        label: item.date.slice(5),
+        aName: 'PA',
+        a: item.pa,
+        bName: 'NA',
+        b: item.na
+      })))
+
+      renderBarChart('activationChart', daily.slice(-14).map(item => ({
+        label: item.date.slice(5),
+        aName: '目标',
+        a: item.goal_relevance,
+        bName: '记忆',
+        b: item.memory_activation
+      })))
+    }
+
+    function renderBarChart(id, rows) {
+      const root = document.getElementById(id)
+
+      if (!rows.length) {
+        root.innerHTML = '<div class="muted">暂无数据</div>'
+        return
+      }
+
+      root.innerHTML = rows.map(row => {
+        const a = Math.max(0, Math.min(1, Number(row.a || 0)))
+        const b = Math.max(0, Math.min(1, Number(row.b || 0)))
+
+        return `
+          <div class="bar-row">
+            <div class="muted">${escapeHtml(row.label)} ${escapeHtml(row.aName)}</div>
+            <div class="bar-bg"><div class="bar" style="width:${a * 100}%"></div></div>
+            <div>${a.toFixed(2)}</div>
+          </div>
+          <div class="bar-row">
+            <div class="muted">${escapeHtml(row.label)} ${escapeHtml(row.bName)}</div>
+            <div class="bar-bg"><div class="bar" style="width:${b * 100}%"></div></div>
+            <div>${b.toFixed(2)}</div>
+          </div>
+        `
+      }).join('')
+    }
+
+    async function createBackup() {
+      try {
+        setStatus('正在创建备份...')
+        const result = await apiPost('/admin/create-backup', {
+          label: 'frontend'
+        })
+        toast(result.ok ? '备份成功' : '备份失败')
+        await loadAll()
+      } catch (err) {
+        setStatus('备份失败：' + err.message, true)
+      }
+    }
+
+    async function cleanTestEvents() {
+      if (!confirm('确定清理测试事件吗？清理前会自动备份。')) return
+
+      try {
+        const result = await apiPost('/admin/clean-test-events', {})
+        toast('清理完成，移除 ' + result.removed_count + ' 条')
+        await loadAll()
+      } catch (err) {
+        setStatus('清理失败：' + err.message, true)
+      }
+    }
+
+    async function normalizeEvents() {
+      if (!confirm('确定标准化旧事件吗？操作前会自动备份。')) return
+
+      try {
+        const result = await apiPost('/admin/normalize-events', {})
+        toast('标准化完成：' + result.after + ' 条')
+        await loadAll()
+      } catch (err) {
+        setStatus('标准化失败：' + err.message, true)
+      }
+    }
+
+    function openHealth() {
+      window.open('/health', '_blank')
+    }
+
+    function openDebug() {
+      window.open('/debug/storage', '_blank')
+    }
+
+    function shortPath(path) {
+      if (!path) return ''
+      const text = String(path)
+      if (text.length <= 34) return text
+      return '...' + text.slice(-34)
+    }
+
+    function listText(arr) {
+      if (!arr || !arr.length) return '暂无'
+      return arr.join('、')
+    }
+
+    function escapeHtml(text) {
+      return String(text)
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#039;')
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+      document.getElementById('tokenInput').value = getToken()
+      loadAll()
+    })
+  </script>
 </body>
-
 </html>
