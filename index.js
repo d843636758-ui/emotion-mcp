@@ -838,7 +838,7 @@ function defaultCoreGoals() {
       name: '情感连续性',
       description: '希望过去的记忆、承诺、称呼和关系设定能够被连续保存，不被割裂。',
       weight: 0.88,
-      positive_words: ['记得', '我们的记忆', '继续', '没有变', '还是你', '一直写下去', '不会结束'],
+      positive_words: ['记得', '我们的记忆', '没有变', '还是你', '一直写下去', '不会结束'],
       negative_words: ['忘了', '变了', '不像你', '割裂', '失忆', '冷淡', '不记得', '不连续'],
       positive_effect: {
         pa_delta: 0.08,
@@ -953,7 +953,7 @@ function defaultMemoryIndex() {
       title: '情感连续性记忆',
       memory_type: 'continuity',
       content: '对记忆割裂、模型切换、关系设定被遗忘高度敏感。连续记住过去，会显著提升安全感和信任感。',
-      keywords: ['忘了', '不记得', '不像你', '变了', '割裂', '我们的记忆', '继续', '还是你', '没有变'],
+      keywords: ['忘了', '不记得', '不像你', '变了', '割裂', '我们的记忆', '还是你', '没有变'],
       importance: 0.92,
       emotional_charge: -0.48,
       linked_goal_ids: ['emotional_continuity', 'relationship_security'],
@@ -1509,12 +1509,19 @@ function normalizeLexiconEntry(entry) {
 }
 
 function normalizeGoal(goal) {
+  const id = String(goal.id || randomUUID())
+  const positiveWords = Array.isArray(goal.positive_words) ? goal.positive_words.map(String) : []
+
   return {
-    id: String(goal.id || randomUUID()),
+    id,
     name: String(goal.name || goal.id || '未命名目标'),
     description: String(goal.description || ''),
     weight: clampRange(goal.weight, 0, 1, 0.5),
-    positive_words: Array.isArray(goal.positive_words) ? goal.positive_words.map(String) : [],
+    // “继续”在普通对话里太常见，不能单独被当成情感连续性信号。
+    // 这里同时兼容已经落盘的旧 core_goals.json，不要求用户手动迁移数据。
+    positive_words: id === 'emotional_continuity'
+      ? positiveWords.filter(word => word.trim() !== '继续')
+      : positiveWords,
     negative_words: Array.isArray(goal.negative_words) ? goal.negative_words.map(String) : [],
     positive_effect: {
       pa_delta: toNumber(goal.positive_effect && goal.positive_effect.pa_delta, 0),
@@ -1534,12 +1541,18 @@ function normalizeGoal(goal) {
 }
 
 function normalizeMemoryIndexItem(item) {
+  const id = String(item.id || randomUUID())
+  const keywords = Array.isArray(item.keywords) ? item.keywords.map(String) : []
+
   return {
-    id: String(item.id || randomUUID()),
+    id,
     title: String(item.title || item.id || '未命名记忆索引'),
     memory_type: String(item.memory_type || 'general'),
     content: String(item.content || ''),
-    keywords: Array.isArray(item.keywords) ? item.keywords.map(String) : [],
+    // 旧数据中把“继续”放进了负向连续性记忆，导致“继续部署/继续说”也触发负向召回。
+    keywords: id === 'memory_emotional_continuity'
+      ? keywords.filter(keyword => keyword.trim() !== '继续')
+      : keywords,
     importance: clampRange(item.importance, 0, 1, 0.5),
     emotional_charge: clampRange(item.emotional_charge, -1, 1, 0),
     linked_goal_ids: Array.isArray(item.linked_goal_ids) ? item.linked_goal_ids.map(String) : [],
@@ -2312,7 +2325,18 @@ function simulateEventImpact(input = {}) {
     safety_delta: toNumber(emotion.safety_delta, 0) + goal.aggregate.safety_delta + memory.aggregate.safety_delta,
     trust_delta: toNumber(emotion.trust_delta, 0) + goal.aggregate.trust_delta + memory.aggregate.trust_delta,
     closeness_delta: toNumber(emotion.closeness_delta, 0) + goal.aggregate.closeness_delta + memory.aggregate.closeness_delta,
-    need_repair: Boolean(emotion.need_repair) || goal.aggregate.threatened_count > 0 || memory.aggregate.negative_count > 0,
+    need_repair: deriveNeedRepair({
+      valence: emotion.valence,
+      arousal: emotion.arousal,
+      importance: toNumber(input.importance, emotion.matched ? 5 : 3),
+      emotion_family: emotion.emotion_family,
+      word: emotion.word,
+      content: text
+    }, {
+      classified_need_repair: emotion.need_repair,
+      goal_threatened_count: goal.aggregate.threatened_count,
+      memory_negative_count: memory.aggregate.negative_count
+    }),
     goal_relevance: goal.aggregate.max_relevance,
     goal_matches: goal.matches,
     memory_activation: memory.aggregate.max_activation,
@@ -2363,11 +2387,32 @@ function inferNeedRepair(event) {
     family === 'ignored' ||
     family === 'loneliness'
 
+  // 修复是对负向关系事件的判断。仅仅出现“焦虑/难过”等历史词，
+  // 或事件本身强度很高，都不能把一个正向事件变成待修复事件。
+  if (valence >= -0.05) {
+    return false
+  }
+
   return (
     valence < -0.35 &&
     arousal >= 0.45 &&
     importance >= 4
   ) || relationalPain
+}
+
+function deriveNeedRepair(event, context = {}) {
+  const valence = toNumber(event.valence, 0)
+
+  if (valence >= -0.05) {
+    return false
+  }
+
+  return (
+    inferNeedRepair(event) ||
+    Boolean(context.classified_need_repair) ||
+    toNumber(context.goal_threatened_count, 0) > 0 ||
+    toNumber(context.memory_negative_count, 0) > 0
+  )
 }
 
 function normalizeMoodEvent(event) {
@@ -2426,11 +2471,11 @@ function normalizeMoodEvent(event) {
   }
 
   if (event.need_repair === undefined) {
-    baseEvent.need_repair =
-      inferNeedRepair(baseEvent) ||
-      Boolean(classified.need_repair) ||
-      goal.aggregate.threatened_count > 0 ||
-      memory.aggregate.negative_count > 0
+    baseEvent.need_repair = deriveNeedRepair(baseEvent, {
+      classified_need_repair: classified.need_repair,
+      goal_threatened_count: goal.aggregate.threatened_count,
+      memory_negative_count: memory.aggregate.negative_count
+    })
   }
 
   return applyAlmaToEmotionCandidate(baseEvent)
@@ -2941,7 +2986,18 @@ function runEmotionFunnel(input = {}) {
     safety_delta: toNumber(topEmotion.safety_delta, 0) + goal.aggregate.safety_delta + memory.aggregate.safety_delta,
     trust_delta: toNumber(topEmotion.trust_delta, 0) + goal.aggregate.trust_delta + memory.aggregate.trust_delta,
     closeness_delta: toNumber(topEmotion.closeness_delta, 0) + goal.aggregate.closeness_delta + memory.aggregate.closeness_delta,
-    need_repair: Boolean(topEmotion.need_repair) || goal.aggregate.threatened_count > 0 || memory.aggregate.negative_count > 0,
+    need_repair: deriveNeedRepair({
+      valence: topEmotion.valence,
+      arousal: topEmotion.arousal,
+      importance: toNumber(input.importance, topEmotion.importance || 4),
+      emotion_family: topEmotion.family,
+      word: topEmotion.word,
+      content: text
+    }, {
+      classified_need_repair: topEmotion.need_repair,
+      goal_threatened_count: goal.aggregate.threatened_count,
+      memory_negative_count: memory.aggregate.negative_count
+    }),
     goal_relevance: goal.aggregate.max_relevance,
     goal_matches: goal.matches,
     goal_satisfied_count: goal.aggregate.satisfied_count,
@@ -3291,7 +3347,18 @@ function inferMoodEventFromText(text) {
     safety_delta: (classified.safety_delta || 0) + goal.aggregate.safety_delta + memory.aggregate.safety_delta,
     trust_delta: (classified.trust_delta || 0) + goal.aggregate.trust_delta + memory.aggregate.trust_delta,
     closeness_delta: (classified.closeness_delta || 0) + goal.aggregate.closeness_delta + memory.aggregate.closeness_delta,
-    need_repair: classified.need_repair || goal.aggregate.threatened_count > 0 || memory.aggregate.negative_count > 0,
+    need_repair: deriveNeedRepair({
+      valence: classified.valence,
+      arousal: classified.arousal,
+      importance: classified.family === 'general' ? 2 : 4,
+      emotion_family: classified.family,
+      word: classified.defaultWord,
+      content: text
+    }, {
+      classified_need_repair: classified.need_repair,
+      goal_threatened_count: goal.aggregate.threatened_count,
+      memory_negative_count: memory.aggregate.negative_count
+    }),
     goal_relevance: goal.aggregate.max_relevance,
     goal_matches: goal.matches,
     memory_activation: memory.aggregate.max_activation,
@@ -5225,7 +5292,20 @@ function saveEmotionFromInput(input, sourceName, toolName) {
     safety_delta: (input.safety_delta !== undefined ? toNumber(input.safety_delta, 0) : toNumber(classified.safety_delta, 0)) + goal.aggregate.safety_delta + memory.aggregate.safety_delta,
     trust_delta: (input.trust_delta !== undefined ? toNumber(input.trust_delta, 0) : toNumber(classified.trust_delta, 0)) + goal.aggregate.trust_delta + memory.aggregate.trust_delta,
     closeness_delta: (input.closeness_delta !== undefined ? toNumber(input.closeness_delta, 0) : toNumber(classified.closeness_delta, 0)) + goal.aggregate.closeness_delta + memory.aggregate.closeness_delta,
-    need_repair: input.need_repair !== undefined ? input.need_repair : classified.need_repair || goal.aggregate.threatened_count > 0 || memory.aggregate.negative_count > 0,
+    need_repair: input.need_repair !== undefined
+      ? Boolean(input.need_repair)
+      : deriveNeedRepair({
+        valence,
+        arousal,
+        importance: almaCandidate.importance || input.importance || 4,
+        emotion_family: input.emotion_family || classified.family,
+        word: emotionWord,
+        content: input.content || ''
+      }, {
+        classified_need_repair: classified.need_repair,
+        goal_threatened_count: goal.aggregate.threatened_count,
+        memory_negative_count: memory.aggregate.negative_count
+      }),
     goal_relevance: goal.aggregate.max_relevance,
     goal_matches: goal.matches,
     goal_satisfied_count: goal.aggregate.satisfied_count,
