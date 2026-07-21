@@ -56,6 +56,55 @@ test('streamable MCP sessions initialize, write atomically, and close cleanly', 
     throw new Error(`${error.message}\n${logs}`)
   })
 
+  const ordinaryContinueMemory = await fetch(`${baseUrl}/memory/activate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text: '继续处理这个问题吧' })
+  }).then(response => response.json())
+
+  assert.equal(
+    ordinaryContinueMemory.activated.some(item => item.id === 'memory_emotional_continuity'),
+    false
+  )
+
+  const ordinaryContinueGoal = await fetch(`${baseUrl}/goal/evaluate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text: '继续处理这个问题吧' })
+  }).then(response => response.json())
+
+  assert.equal(
+    ordinaryContinueGoal.matches.some(item => item.id === 'emotional_continuity'),
+    false
+  )
+
+  const positiveImpact = await fetch(`${baseUrl}/simulate/event-impact`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      text: '虽然提到忘了，但现在已经哄好了，我特别安心开心',
+      valence: 0.9,
+      arousal: 0.9,
+      importance: 9
+    })
+  }).then(response => response.json())
+
+  assert.equal(positiveImpact.memory_activation.aggregate.negative_count > 0, true)
+  assert.equal(positiveImpact.simulated_event.need_repair, false)
+
+  const negativeImpact = await fetch(`${baseUrl}/simulate/event-impact`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      text: '我现在很焦虑，也很害怕你离开',
+      valence: -0.8,
+      arousal: 0.9,
+      importance: 8
+    })
+  }).then(response => response.json())
+
+  assert.equal(negativeImpact.simulated_event.need_repair, true)
+
   const initialize = await fetch(`${baseUrl}/mcp`, {
     method: 'POST',
     headers: {
@@ -96,23 +145,25 @@ test('streamable MCP sessions initialize, write atomically, and close cleanly', 
       params: {
         name: 'add_emotion_event',
         arguments: {
-          content: 'integration test event',
+          content: '虽然提到忘了，但现在特别安心开心',
           feeling_word: '安心',
-          valence: 0.7,
-          arousal: 0.3,
-          importance: 4
+          emotion_family: 'joy',
+          valence: 0.9,
+          arousal: 0.9,
+          importance: 9
         }
       }
     })
   })
 
   assert.equal(toolCall.status, 200)
-  assert.match(await toolCall.text(), /integration test event/)
+  assert.match(await toolCall.text(), /特别安心开心/)
 
   const events = JSON.parse(
     fs.readFileSync(path.join(dataDir, 'mood_events.json'), 'utf8')
   )
-  assert.equal(events.at(-1).content, 'integration test event')
+  assert.equal(events.at(-1).content, '虽然提到忘了，但现在特别安心开心')
+  assert.equal(events.at(-1).need_repair, false)
   assert.equal(
     fs.readdirSync(dataDir).some(name => name.endsWith('.tmp')),
     false
