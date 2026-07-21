@@ -56,7 +56,7 @@ if (!fs.existsSync(BACKUP_DIR)) {
 function readJsonFile(filePath, fallback) {
   try {
     if (!fs.existsSync(filePath)) {
-      fs.writeFileSync(filePath, JSON.stringify(fallback, null, 2))
+      writeJsonFile(filePath, fallback)
       return fallback
     }
 
@@ -74,11 +74,31 @@ function readJsonFile(filePath, fallback) {
 }
 
 function writeJsonFile(filePath, data) {
+  const tempFile = `${filePath}.${process.pid}.${randomUUID()}.tmp`
+  let fd = null
+
   try {
-    fs.writeFileSync(filePath, JSON.stringify(data, null, 2))
+    const payload = JSON.stringify(data, null, 2)
+    fd = fs.openSync(tempFile, 'w')
+    fs.writeFileSync(fd, payload, 'utf8')
+    fs.fsyncSync(fd)
+    fs.closeSync(fd)
+    fd = null
+    fs.renameSync(tempFile, filePath)
     return true
   } catch (err) {
     console.log('write json error', filePath, err)
+
+    if (fd !== null) {
+      try {
+        fs.closeSync(fd)
+      } catch (_) {}
+    }
+
+    try {
+      fs.unlinkSync(tempFile)
+    } catch (_) {}
+
     return false
   }
 }
@@ -6905,14 +6925,69 @@ function createMcpServer() {
   return server
 }
 
-const streamableTransports = {}
+const streamableSessions = new Map()
+const STREAMABLE_SESSION_TTL_MS = Math.floor(clampRange(
+  process.env.MCP_SESSION_TTL_MS,
+  60_000,
+  24 * 60 * 60 * 1000,
+  2 * 60 * 60 * 1000
+))
+const STREAMABLE_SESSION_LIMIT = Math.floor(clampRange(
+  process.env.MCP_SESSION_LIMIT,
+  8,
+  2048,
+  256
+))
+
+async function closeStreamableSession(sessionId, reason = 'closed') {
+  const record = streamableSessions.get(sessionId)
+
+  if (!record) {
+    return
+  }
+
+  streamableSessions.delete(sessionId)
+
+  try {
+    await record.server.close()
+  } catch (err) {
+    console.log('streamable session close error', sessionId, reason, err)
+  }
+}
+
+function evictOldestStreamableSession() {
+  if (streamableSessions.size < STREAMABLE_SESSION_LIMIT) {
+    return
+  }
+
+  const oldest = [...streamableSessions.entries()]
+    .sort((left, right) => left[1].lastSeen - right[1].lastSeen)[0]
+
+  if (oldest) {
+    void closeStreamableSession(oldest[0], 'session limit')
+  }
+}
+
+const streamableSessionCleanupTimer = setInterval(() => {
+  const cutoff = Date.now() - STREAMABLE_SESSION_TTL_MS
+
+  for (const [sessionId, record] of streamableSessions.entries()) {
+    if (record.lastSeen < cutoff) {
+      void closeStreamableSession(sessionId, 'idle timeout')
+    }
+  }
+}, Math.min(5 * 60 * 1000, Math.max(30_000, STREAMABLE_SESSION_TTL_MS / 4)))
+
+streamableSessionCleanupTimer.unref()
 
 app.post('/mcp', async (req, res) => {
+  let record = null
+
   try {
     const sessionId = req.headers['mcp-session-id']
-    let transport = sessionId ? streamableTransports[sessionId] : undefined
+    record = sessionId ? streamableSessions.get(sessionId) : undefined
 
-    if (!transport) {
+    if (!record) {
       const isInitialize = req.body && req.body.method === 'initialize'
 
       if (!isInitialize) {
@@ -6926,60 +7001,105 @@ app.post('/mcp', async (req, res) => {
         })
       }
 
-      transport = new StreamableHTTPServerTransport({
+      evictOldestStreamableSession()
+
+      const server = createMcpServer()
+      const transport = new StreamableHTTPServerTransport({
         sessionIdGenerator: () => randomUUID(),
         onsessioninitialized: newSessionId => {
-          streamableTransports[newSessionId] = transport
+          record.sessionId = newSessionId
+          record.lastSeen = Date.now()
+          streamableSessions.set(newSessionId, record)
         }
       })
 
-      transport.onclose = () => {
-        if (transport.sessionId) {
-          delete streamableTransports[transport.sessionId]
-        }
+      record = {
+        server,
+        transport,
+        sessionId: null,
+        lastSeen: Date.now()
       }
 
-      const server = createMcpServer()
-
       await server.connect(transport)
+
+      const serverOnClose = transport.onclose
+      transport.onclose = () => {
+        try {
+          if (typeof serverOnClose === 'function') {
+            serverOnClose()
+          }
+        } finally {
+          if (record.sessionId) {
+            streamableSessions.delete(record.sessionId)
+          }
+        }
+      }
     }
 
-    await transport.handleRequest(req, res, req.body)
+    record.lastSeen = Date.now()
+    await record.transport.handleRequest(req, res, req.body)
   } catch (err) {
     console.log('streamable mcp error', err)
 
+    if (record && record.sessionId) {
+      void closeStreamableSession(record.sessionId, 'request error')
+    }
+
     if (!res.headersSent) {
       res.status(500).json({
-        error: 'mcp error'
+        jsonrpc: '2.0',
+        error: {
+          code: -32603,
+          message: 'Internal MCP error'
+        },
+        id: req.body && req.body.id ? req.body.id : null
       })
     }
   }
 })
 
 app.get('/mcp', async (req, res) => {
-  const sessionId = req.headers['mcp-session-id']
-  const transport = streamableTransports[sessionId]
+  try {
+    const sessionId = req.headers['mcp-session-id']
+    const record = streamableSessions.get(sessionId)
 
-  if (!transport) {
-    return res.status(400).json({
-      error: 'No valid MCP session id. Kelivo should connect using POST initialize first.'
-    })
+    if (!record) {
+      return res.status(400).json({
+        error: 'No valid MCP session id. Kelivo should connect using POST initialize first.'
+      })
+    }
+
+    record.lastSeen = Date.now()
+    await record.transport.handleRequest(req, res)
+  } catch (err) {
+    console.log('streamable mcp get error', err)
+
+    if (!res.headersSent) {
+      res.status(500).json({ error: 'mcp stream error' })
+    }
   }
-
-  await transport.handleRequest(req, res)
 })
 
 app.delete('/mcp', async (req, res) => {
-  const sessionId = req.headers['mcp-session-id']
-  const transport = streamableTransports[sessionId]
+  try {
+    const sessionId = req.headers['mcp-session-id']
+    const record = streamableSessions.get(sessionId)
 
-  if (!transport) {
-    return res.status(400).json({
-      error: 'No valid MCP session id'
-    })
+    if (!record) {
+      return res.status(400).json({
+        error: 'No valid MCP session id'
+      })
+    }
+
+    record.lastSeen = Date.now()
+    await record.transport.handleRequest(req, res)
+  } catch (err) {
+    console.log('streamable mcp delete error', err)
+
+    if (!res.headersSent) {
+      res.status(500).json({ error: 'mcp close error' })
+    }
   }
-
-  await transport.handleRequest(req, res)
 })
 
 const sseTransports = {}
@@ -7029,7 +7149,10 @@ app.get('/health', (req, res) => {
   res.json({
     ok: true,
     name: 'emotion-system',
-    sdk: '1.17.5',
+    sdk: require('./package.json').dependencies['@modelcontextprotocol/sdk'],
+    streamable_sessions: streamableSessions.size,
+    streamable_session_limit: STREAMABLE_SESSION_LIMIT,
+    streamable_session_ttl_ms: STREAMABLE_SESSION_TTL_MS,
     formula: 'psychological-state-v12-memory-activation-interaction-strategy',
     data_dir: DATA_DIR,
     mood_file: MOOD_FILE,
@@ -7534,6 +7657,29 @@ app.post('/chat', async (req, res) => {
 
 const PORT = process.env.PORT || 3000
 
-app.listen(PORT, () => {
+const httpServer = app.listen(PORT, () => {
   console.log('emotion mcp server running psychological-state-v12-memory-activation-interaction-strategy')
+  console.log(
+    `streamable sessions guarded: limit=${STREAMABLE_SESSION_LIMIT} ttl_ms=${STREAMABLE_SESSION_TTL_MS}`
+  )
 })
+
+httpServer.keepAliveTimeout = 65_000
+httpServer.headersTimeout = 70_000
+
+async function shutdown(signal) {
+  console.log(`emotion mcp received ${signal}, closing connections`)
+  clearInterval(streamableSessionCleanupTimer)
+
+  await Promise.allSettled(
+    [...streamableSessions.keys()].map(sessionId =>
+      closeStreamableSession(sessionId, signal)
+    )
+  )
+
+  httpServer.close(() => process.exit(0))
+  setTimeout(() => process.exit(1), 10_000).unref()
+}
+
+process.once('SIGTERM', () => void shutdown('SIGTERM'))
+process.once('SIGINT', () => void shutdown('SIGINT'))
