@@ -1,0 +1,9 @@
+.git
+.github
+node_modules
+npm-debug.log*
+test
+backups
+*.tmp
+memory.json
+mood_events.json
