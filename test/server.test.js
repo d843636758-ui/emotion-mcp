@@ -33,6 +33,7 @@ test('streamable MCP sessions initialize, write atomically, and close cleanly', 
       ...process.env,
       PORT: String(port),
       DATA_DIR: dataDir,
+      ADMIN_TOKEN: 'test-admin-token',
       OPENAI_API_KEY: 'test-key',
       MCP_SESSION_TTL_MS: '60000',
       MCP_SESSION_LIMIT: '8'
@@ -104,6 +105,31 @@ test('streamable MCP sessions initialize, write atomically, and close cleanly', 
   }).then(response => response.json())
 
   assert.equal(negativeImpact.simulated_event.need_repair, true)
+
+  const migrationBackup = await fetch(`${baseUrl}/admin/create-backup`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-admin-token': 'test-admin-token'
+    },
+    body: JSON.stringify({ label: 'migration-test' })
+  }).then(response => response.json())
+
+  assert.equal(migrationBackup.ok, true)
+  assert.equal(migrationBackup.one_time, true)
+  assert.match(migrationBackup.name, /migration-test\.json$/)
+  assert.equal(migrationBackup.size > 0, true)
+  assert.match(migrationBackup.download_path, /^\/migration-export\/[a-f0-9]{32}$/)
+
+  const migrationDownload = await fetch(`${baseUrl}${migrationBackup.download_path}`)
+  assert.equal(migrationDownload.status, 200)
+  assert.match(migrationDownload.headers.get('content-disposition'), /attachment/)
+  const downloadedBackup = JSON.parse(await migrationDownload.text())
+  assert.equal(downloadedBackup.label, 'migration-test')
+  assert.ok(downloadedBackup.files)
+
+  const reusedMigrationDownload = await fetch(`${baseUrl}${migrationBackup.download_path}`)
+  assert.equal(reusedMigrationDownload.status, 410)
 
   const initialize = await fetch(`${baseUrl}/mcp`, {
     method: 'POST',

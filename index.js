@@ -48,6 +48,11 @@ const CORE_GOALS_FILE = `${DATA_DIR}/core_goals.json`
 const MEMORY_INDEX_FILE = `${DATA_DIR}/memory_index.json`
 const STRATEGY_PROFILE_FILE = `${DATA_DIR}/strategy_profile.json`
 const BACKUP_DIR = `${DATA_DIR}/backups`
+const MIGRATION_EXPORT_TTL_MS = Math.max(
+  60_000,
+  Number(process.env.MIGRATION_EXPORT_TTL_MS || 15 * 60_000)
+)
+const migrationExports = new Map()
 
 if (!fs.existsSync(BACKUP_DIR)) {
   fs.mkdirSync(BACKUP_DIR, { recursive: true })
@@ -4763,6 +4768,45 @@ function createBackup(label = 'manual') {
   }
 }
 
+function pruneMigrationExports(now = Date.now()) {
+  for (const [token, entry] of migrationExports.entries()) {
+    if (entry.expires_at <= now) {
+      migrationExports.delete(token)
+    }
+  }
+}
+
+function createMigrationExport(backupFile) {
+  pruneMigrationExports()
+
+  const token = randomUUID().replace(/-/g, '')
+  const expiresAt = Date.now() + MIGRATION_EXPORT_TTL_MS
+  migrationExports.set(token, {
+    file: backupFile,
+    expires_at: expiresAt
+  })
+
+  return {
+    download_path: `/migration-export/${token}`,
+    expires_at: expiresAt,
+    one_time: true
+  }
+}
+
+function createMigrationBackup(label = 'migration') {
+  const backup = createBackup(label)
+  const stat = backup.ok && fs.existsSync(backup.file)
+    ? fs.statSync(backup.file)
+    : null
+
+  return {
+    ok: backup.ok,
+    name: path.basename(backup.file),
+    size: stat ? stat.size : 0,
+    ...createMigrationExport(backup.file)
+  }
+}
+
 function listBackups() {
   if (!fs.existsSync(BACKUP_DIR)) {
     return []
@@ -6713,7 +6757,7 @@ function createMcpServer() {
       content: [
         {
           type: 'text',
-          text: JSON.stringify(createBackup(input.label || 'mcp'), null, 2)
+          text: JSON.stringify(createMigrationBackup(input.label || 'mcp'), null, 2)
         }
       ]
     })
@@ -7591,9 +7635,37 @@ app.get('/admin/backups', checkAdmin, (req, res) => {
   })
 })
 
+app.get('/migration-export/:token', (req, res) => {
+  pruneMigrationExports()
+
+  const entry = migrationExports.get(req.params.token)
+  if (!entry) {
+    return res.status(410).json({
+      ok: false,
+      error: 'Migration export link is invalid, expired, or already used'
+    })
+  }
+
+  migrationExports.delete(req.params.token)
+
+  if (!fs.existsSync(entry.file)) {
+    return res.status(404).json({
+      ok: false,
+      error: 'Backup file no longer exists'
+    })
+  }
+
+  res.set({
+    'Cache-Control': 'no-store, private',
+    'Content-Type': 'application/json',
+    'Content-Disposition': `attachment; filename="${path.basename(entry.file)}"`
+  })
+  return res.sendFile(entry.file)
+})
+
 app.post('/admin/create-backup', checkAdmin, (req, res) => {
   const label = req.body && req.body.label ? req.body.label : 'admin'
-  res.json(createBackup(label))
+  res.json(createMigrationBackup(label))
 })
 
 app.get('/admin/create-backup-now', checkAdmin, (req, res) => {
